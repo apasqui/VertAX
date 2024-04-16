@@ -173,6 +173,7 @@ for dt in trange(tot_time, desc='total'):
     cost_zero = []
     lagrangian_zero = []
     shape_factor_zero = []
+    lagrangian_step_zero = lagrangian_step
 
     energy_zero.append(float(energy(simulation_zero.geo_graph, simulation_zero.geo_graph.vertTable, simulation_zero.geo_graph.t_heTable, simulation_zero.geo_graph.t_faceTable, params=params)))
     cost_zero.append(float(cost(simulation_zero.geo_graph.vertTable, vertTable_target, L_box)))
@@ -183,11 +184,16 @@ for dt in trange(tot_time, desc='total'):
 
         # tqdm.write('di_zero = ' + str(di) + ' /' + str(lagrangian_time))
 
-        simulation_zero.geo_graph.vertTable = simulation_zero.update_lagrangian(simulation_zero.geo_graph.vertTable, vertTable_target, params, beta=0., step=lagrangian_step)
-        simulation_zero.geo_graph.vertTable, simulation_zero.geo_graph.t_heTable = simulation_zero.geo_graph.update_vertices_positions_and_offsets(simulation_zero.geo_graph.vertTable, simulation_zero.geo_graph.t_heTable)
-        simulation_zero.geo_graph.vertTable, simulation_zero.geo_graph.t_heTable, simulation_zero.geo_graph.t_faceTable = simulation_zero.geo_graph.update_T1(MIN_DISTANCE=MIN_DISTANCE)
-        simulation_zero.geo_graph.vertTable, simulation_zero.geo_graph.t_heTable = simulation_zero.geo_graph.update_vertices_positions_and_offsets(simulation_zero.geo_graph.vertTable, simulation_zero.geo_graph.t_heTable)
-        tqdm.write(str(round(simulation_zero.geo_graph.check_crossings(simulation_zero.geo_graph.vertTable, simulation_zero.geo_graph.t_heTable, simulation_zero.geo_graph.t_faceTable), 1)))
+        vertTable_new = simulation_zero.update_lagrangian(simulation_zero.geo_graph.vertTable, vertTable_target, params, beta=0., step=lagrangian_step_zero)
+        vertTable_new, t_heTable_new = simulation_zero.geo_graph.update_vertices_positions_and_offsets(simulation_zero.geo_graph.vertTable, simulation_zero.geo_graph.t_heTable)
+        vertTable_new, t_heTable_new, t_faceTable_new = simulation_zero.geo_graph.update_T1(MIN_DISTANCE=MIN_DISTANCE)
+        vertTable_new, t_heTable_new = simulation_zero.geo_graph.update_vertices_positions_and_offsets(simulation_zero.geo_graph.vertTable, simulation_zero.geo_graph.t_heTable)
+
+        if simulation_zero.geo_graph.check_collisions(vertTable_new, t_heTable_new, t_faceTable_new):
+            simulation_zero.geo_graph.vertTable, simulation_zero.geo_graph.t_heTable, simulation_zero.geo_graph.t_faceTable = vertTable_new, t_heTable_new, t_faceTable_new
+        else:
+            tqdm.write('Collision detected at dt='+str(dt)+' di='+str(di)+', lagrangian step zero: ' + str(lagrangian_step_zero) + ' --> ' + str(lagrangian_step_zero/2))
+            lagrangian_step_zero = lagrangian_step_zero/2
 
         np.save('./binaries/binaries_zero_'+str(dt)+'/' + str(di) + '_vertTable', simulation_zero.geo_graph.vertTable)
         np.save('./binaries/binaries_zero_'+str(dt)+'/' + str(di) + '_faceTable', simulation_zero.geo_graph.t_faceTable)
@@ -213,6 +219,7 @@ for dt in trange(tot_time, desc='total'):
     cost_beta = []
     lagrangian_beta = []
     shape_factor_beta = []
+    lagrangian_step_beta = lagrangian_step
 
     energy_beta.append(float(energy(simulation_beta.geo_graph, simulation_beta.geo_graph.vertTable, simulation_beta.geo_graph.t_heTable, simulation_beta.geo_graph.t_faceTable, params=params)))
     cost_beta.append(float(cost(simulation_beta.geo_graph.vertTable, vertTable_target, L_box)))
@@ -223,10 +230,16 @@ for dt in trange(tot_time, desc='total'):
 
         # tqdm.write('dj_beta = ' + str(dj) + ' /' + str(lagrangian_time))
 
-        simulation_beta.geo_graph.vertTable = simulation_beta.update_lagrangian(simulation_beta.geo_graph.vertTable, vertTable_target, params, beta=beta, step=lagrangian_step)
-        simulation_beta.geo_graph.vertTable, simulation_beta.geo_graph.t_heTable = simulation_beta.geo_graph.update_vertices_positions_and_offsets(simulation_beta.geo_graph.vertTable, simulation_beta.geo_graph.t_heTable)
-        simulation_beta.geo_graph.vertTable, simulation_beta.geo_graph.t_heTable, simulation_beta.geo_graph.t_faceTable = simulation_beta.geo_graph.update_T1(MIN_DISTANCE=MIN_DISTANCE)
-        simulation_beta.geo_graph.vertTable, simulation_beta.geo_graph.t_heTable = simulation_beta.geo_graph.update_vertices_positions_and_offsets(simulation_beta.geo_graph.vertTable, simulation_beta.geo_graph.t_heTable)
+        vertTable_new = simulation_beta.update_lagrangian(simulation_beta.geo_graph.vertTable, vertTable_target, params, beta=beta, step=lagrangian_step_beta)
+        vertTable_new, t_heTable_new = simulation_beta.geo_graph.update_vertices_positions_and_offsets(simulation_beta.geo_graph.vertTable, simulation_beta.geo_graph.t_heTable)
+        vertTable_new, t_heTable_new, t_faceTable_new = simulation_beta.geo_graph.update_T1(MIN_DISTANCE=MIN_DISTANCE)
+        vertTable_new, t_heTable_new = simulation_beta.geo_graph.update_vertices_positions_and_offsets(simulation_beta.geo_graph.vertTable, simulation_beta.geo_graph.t_heTable)
+
+        if simulation_beta.geo_graph.check_collisions(vertTable_new, t_heTable_new, t_faceTable_new):
+            simulation_beta.geo_graph.vertTable, simulation_beta.geo_graph.t_heTable, simulation_beta.geo_graph.t_faceTable = vertTable_new, t_heTable_new, t_faceTable_new
+        else:
+            tqdm.write('Collision detected at dt='+str(dt)+' dj='+str(dj)+', lagrangian step beta: ' + str(lagrangian_step_beta) + ' --> ' + str(lagrangian_step_beta / 2))
+            lagrangian_step_beta = lagrangian_step_beta / 2
 
         np.save('./binaries/binaries_beta_'+str(dt)+'/' + str(dj) + '_vertTable', simulation_beta.geo_graph.vertTable)
         np.save('./binaries/binaries_beta_'+str(dt)+'/' + str(dj) + '_faceTable', simulation_beta.geo_graph.t_faceTable)

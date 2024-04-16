@@ -172,14 +172,14 @@ class DVM_geometry(DVM_topology):
         return jnp.sum(perimeters) / jnp.sqrt(num_faces * jnp.sum(areas))
 
     @partial(jit, static_argnums=(0,))
-    def check_crossings(self, vertTable, t_heTable, t_faceTable):
+    def check_collisions(self, vertTable, t_heTable, t_faceTable):
 
         num_faces = len(t_faceTable)
         faces = jnp.arange(num_faces)
         mapped_fn = lambda face: self.compute_single_face(face, vertTable, t_heTable, t_faceTable)
         _, areas = vmap(mapped_fn)(faces)
 
-        return jnp.sum(areas)
+        return jnp.where(jnp.sum(areas) - self.L_box ** 2 <= 0.001, True, False)
 
     # computing center given two vertices with their offsets
     # v1 = (v1_x, v1_y, v1_offset_x * L_box, v1_offset_y * L_box)
