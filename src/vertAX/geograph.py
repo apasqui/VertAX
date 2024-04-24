@@ -202,91 +202,127 @@ class geometry(topology):
 
         return cx, cy
 
-    # def check_
+    @partial(jit, static_argnums=(0,))
+    def update_he(self, he, t_heTable, vertTable):
+
+        v_idx_target = t_heTable.at[he, 4].get()
+        v_x = vertTable.at[v_idx_target, 0].get()
+        v_y = vertTable.at[v_idx_target, 1].get()
+        offset_x_target = jnp.where(v_x < 0., -1, jnp.where(v_x > self.L_box, +1, 0))
+        offset_y_target = jnp.where(v_y < 0., -1, jnp.where(v_y > self.L_box, +1, 0))
+
+        v_idx_source = t_heTable.at[he, 3].get()
+        v_x = vertTable.at[v_idx_source, 0].get()
+        v_y = vertTable.at[v_idx_source, 1].get()
+        offset_x_source = jnp.where(v_x < 0., -1, jnp.where(v_x > self.L_box, +1, 0))
+        offset_y_source = jnp.where(v_y < 0., -1, jnp.where(v_y > self.L_box, +1, 0))
+
+        return offset_x_target, offset_y_target, offset_x_source, offset_y_source
+
+    @partial(jit, static_argnums=(0,))
+    def move_vertex(self, v, vertTable):
+
+        v_x = vertTable.at[v, 0].get()
+        v_y = vertTable.at[v, 1].get()
+        v_x = jnp.where(v_x < 0., v_x + self.L_box, jnp.where(v_x > self.L_box, v_x - self.L_box, v_x))
+        v_y = jnp.where(v_y < 0., v_y + self.L_box, jnp.where(v_y > self.L_box, v_y - self.L_box, v_y))
+
+        return v_x, v_y
 
     # updating vertices positions for periodic boundary conditions
-    # @partial(jit, static_argnums=(0,))
+    @partial(jit, static_argnums=(0,))
     def update_vertices_positions_and_offsets(self, vertTable, t_heTable):
 
-        for he in range(len(t_heTable)):
+        mapped_offsets = lambda he: self.update_he(he, t_heTable, vertTable)
+        offset_x_target, offset_y_target, offset_x_source, offset_y_source = vmap(mapped_offsets)(jnp.arange(len(t_heTable)))
+        t_heTable = t_heTable.at[:, 6].add(+offset_x_target-offset_x_source)
+        t_heTable = t_heTable.at[:, 7].add(+offset_y_target-offset_y_source)
 
-            v_idx_target = t_heTable.at[he, 4].get()
-
-            v_x = vertTable.at[v_idx_target, 0].get()
-            v_y = vertTable.at[v_idx_target, 1].get()
-
-            #mask_x = (v_x < 0) | (v_x > self.L_box)
-            #offset_x = jnp.where(v_x < 0, 1, jnp.where(v_x > self.L_box, -1, 0))
-            #vertTable = vertTable.at[v, 0].set(jnp.where(mask_x, v_x + offset_x * self.L_box, v_x))
-
-            if v_x < 0.:
-                offset_x = -1
-            elif v_x > self.L_box:
-                offset_x = +1
-            else:
-                offset_x = 0
-            if v_y < 0.:
-                offset_y = -1
-            elif v_y > self.L_box:
-                offset_y = +1
-            else:
-                offset_y = 0
-
-            t_heTable = t_heTable.at[he, 6].add(offset_x)
-            t_heTable = t_heTable.at[he, 7].add(offset_y)
-
-            v_idx_source = t_heTable.at[he, 3].get()
-
-            v_x = vertTable.at[v_idx_source, 0].get()
-            v_y = vertTable.at[v_idx_source, 1].get()
-
-            if v_x < 0.:
-                offset_x = -1
-            elif v_x > self.L_box:
-                offset_x = +1
-            else:
-                offset_x = 0
-            if v_y < 0.:
-                offset_y = -1
-            elif v_y > self.L_box:
-                offset_y = +1
-            else:
-                offset_y = 0
-
-            t_heTable = t_heTable.at[he, 6].add(-offset_x)
-            t_heTable = t_heTable.at[he, 7].add(-offset_y)
-
-        for v in range(len(vertTable)):  # move back each vertex inside the box
-
-            v_x = vertTable.at[v, 0].get()
-            v_y = vertTable.at[v, 1].get()
-
-            if v_x < 0.:
-                vertTable = vertTable.at[v, 0].set(v_x + self.L_box)
-            elif v_x > self.L_box:
-                vertTable = vertTable.at[v, 0].set(v_x - self.L_box)
-            else:
-                vertTable = vertTable.at[v, 0].set(v_x)
-            if v_y < 0.:
-                vertTable = vertTable.at[v, 1].set(v_y + self.L_box)
-            elif v_y > self.L_box:
-                vertTable = vertTable.at[v, 1].set(v_y - self.L_box)
-            else:
-                vertTable = vertTable.at[v, 1].set(v_y)
-
-            # # adding offset to all links for which v is target
-            # v_target_links_indices = jnp.where(t_heTable.at[:, 4].get() == v)
-            # for t_idx in v_target_links_indices[0]:
-            #     t_heTable = t_heTable.at[t_idx, 6].add(offset_x)
-            #     t_heTable = t_heTable.at[t_idx, 7].add(offset_y)
-            #
-            # # removing offset to all links for which v is source
-            # v_source_links_indices = jnp.where(t_heTable.at[:, 3].get() == v)
-            # for s_idx in v_source_links_indices[0]:
-            #     t_heTable = t_heTable.at[s_idx, 6].add(-offset_x)
-            #     t_heTable = t_heTable.at[s_idx, 7].add(-offset_y)
+        mapped_vertices = lambda v: self.move_vertex(v, vertTable)
+        v_x, v_y = vmap(mapped_vertices)(jnp.arange(len(vertTable)))
+        vertTable = vertTable.at[:, 0].set(v_x)
+        vertTable = vertTable.at[:, 1].set(v_y)
 
         return vertTable, t_heTable
+
+
+    # def update_vertices_positions_and_offsets(self, vertTable, t_heTable):
+    #
+    #     for he in range(len(t_heTable)):
+    #
+    #         v_idx_target = t_heTable.at[he, 4].get()
+    #
+    #         v_x = vertTable.at[v_idx_target, 0].get()
+    #         v_y = vertTable.at[v_idx_target, 1].get()
+    #
+    #         offset_x = jnp.where(v_x < 0., -1, jnp.where(v_x > self.L_box, +1, 0))
+    #         offset_y = jnp.where(v_y < 0., -1, jnp.where(v_y > self.L_box, +1, 0))
+    #
+    #         # if v_x < 0.:
+    #         #     offset_x = -1
+    #         # elif v_x > self.L_box:
+    #         #     offset_x = +1
+    #         # else:
+    #         #     offset_x = 0
+    #         # if v_y < 0.:
+    #         #     offset_y = -1
+    #         # elif v_y > self.L_box:
+    #         #     offset_y = +1
+    #         # else:
+    #         #     offset_y = 0
+    #
+    #         t_heTable = t_heTable.at[he, 6].add(offset_x)
+    #         t_heTable = t_heTable.at[he, 7].add(offset_y)
+    #
+    #         v_idx_source = t_heTable.at[he, 3].get()
+    #
+    #         v_x = vertTable.at[v_idx_source, 0].get()
+    #         v_y = vertTable.at[v_idx_source, 1].get()
+    #
+    #         offset_x = jnp.where(v_x < 0., -1, jnp.where(v_x > self.L_box, +1, 0))
+    #         offset_y = jnp.where(v_y < 0., -1, jnp.where(v_y > self.L_box, +1, 0))
+    #
+    #         # if v_x < 0.:
+    #         #     offset_x = -1
+    #         # elif v_x > self.L_box:
+    #         #     offset_x = +1
+    #         # else:
+    #         #     offset_x = 0
+    #         # if v_y < 0.:
+    #         #     offset_y = -1
+    #         # elif v_y > self.L_box:
+    #         #     offset_y = +1
+    #         # else:
+    #         #     offset_y = 0
+    #
+    #         t_heTable = t_heTable.at[he, 6].add(-offset_x)
+    #         t_heTable = t_heTable.at[he, 7].add(-offset_y)
+    #
+    #     for v in range(len(vertTable)):  # move back each vertex inside the box
+    #
+    #         v_x = vertTable.at[v, 0].get()
+    #         v_y = vertTable.at[v, 1].get()
+    #
+    #         # if v_x < 0.:
+    #         #     vertTable = vertTable.at[v, 0].set(v_x + self.L_box)
+    #         # elif v_x > self.L_box:
+    #         #     vertTable = vertTable.at[v, 0].set(v_x - self.L_box)
+    #         # else:
+    #         #     vertTable = vertTable.at[v, 0].set(v_x)
+    #         # if v_y < 0.:
+    #         #     vertTable = vertTable.at[v, 1].set(v_y + self.L_box)
+    #         # elif v_y > self.L_box:
+    #         #     vertTable = vertTable.at[v, 1].set(v_y - self.L_box)
+    #         # else:
+    #         #     vertTable = vertTable.at[v, 1].set(v_y)
+    #
+    #         v_x = jnp.where(v_x < 0., v_x + self.L_box, jnp.where(v_x > self.L_box, v_x - self.L_box, v_x))
+    #         vertTable = vertTable.at[v, 0].set(v_x)
+    #
+    #         v_y = jnp.where(v_y < 0., v_y + self.L_box, jnp.where(v_y > self.L_box, v_y - self.L_box, v_y))
+    #         vertTable = vertTable.at[v, 1].set(v_y)
+    #
+    #     return vertTable, t_heTable
 
 
 
