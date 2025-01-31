@@ -1,9 +1,12 @@
 import jax.numpy as jnp 
 from jax import jit, jacfwd, lax 
+import jax
 
 import optax 
 
 from vertax.topo import update_T1
+
+# ADD one function with options 'ad, ep, id'
 
 
 ####################
@@ -15,17 +18,20 @@ def min_fun(vertTable: jnp.array,
             faceTable: jnp.array, 
             areas_params: jnp.array, 
             edges_params: jnp.array, 
-            fun, 
+            func, 
             solver, 
             epochs: int
             ):
 
-    #@jit
+    @jit
     def update_step(carry, _):
         vertTable, heTable, faceTable, opt_state = carry
-        jacforward = jacfwd(fun, argnums=0)(vertTable, heTable, faceTable, areas_params, edges_params)
+        jacforward = jacfwd(func, argnums=0)(vertTable, heTable, faceTable, areas_params, edges_params)
+        #jax.debug.print("🤯 {x} 🤯", x=jacforward)
         updates, opt_state = solver.update(jacforward, opt_state)
+        #jax.debug.print("🤯 {x} 🤯", x=vertTable)
         vertTable = optax.apply_updates(vertTable, updates)
+        #jax.debug.print("🤯 {x} 🤯", x=vertTable)
         # vertTable, heTable, faceTable = update_T1(vertTable, heTable, faceTable, MIN_DISTANCE = 0.0001)
         return (vertTable, heTable, faceTable, opt_state), None
 
@@ -41,6 +47,12 @@ def min_fun(vertTable: jnp.array,
 #####################
 ### INNER PROCESS ###
 #####################
+
+# epochs == iterations
+# maximum iterations with stopping conditions (certain number of steps energy does not vary relatively == tolerance)
+
+# tolerance = for t times we have to have:  DE/E < 10**-8 (-6)(-5)
+
 
 def inner(vertTable: jnp.array, 
           heTable: jnp.array, 
@@ -73,6 +85,12 @@ def inner(vertTable: jnp.array,
 ### OUTER PROCESS ###
 #####################
 
+# epochs
+# maximum iterations with stopping conditions (certain number of steps energy does not vary relatively == tolerance)
+
+# tolerance = for t times we have to have:  DE/E < 10**-8 (-6)(-5)
+
+
 def outer(areas_params: jnp.array, 
           edges_params: jnp.array,
           vertTable: jnp.array, 
@@ -95,6 +113,8 @@ def outer(areas_params: jnp.array,
 #########################
 ### PARAMETERS UPDATE ###
 #########################
+
+# ADD parameters associated to verteces 
 
 def update_params(areas_params: jnp.array, 
                   edges_params: jnp.array, 
