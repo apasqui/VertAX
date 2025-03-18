@@ -96,8 +96,9 @@ def cost(vertTable_eq, heTable_eq, faceTable_eq, selected_verts, selected_hes, s
 
 ## INITIAL CONFIGURATION AND TARGET CONFIGURATION
 
-# load a target configuration and 
-vertTable_target, heTable_target, faceTable_target = load_geograph('/workspace/vertax/_section2/init_cond_100cells_0.2min_dist_T1_3.72p0_homo/')
+# loading the target configuration 
+vertTable_target, heTable_target, faceTable_target = load_geograph('./init_cond_100cells_0.2min_dist_T1_3.72p0_homo/')
+# defining the starting configuration for the simulation as the target (but with different initial parameters defined above!)
 vertTable_eq, heTable_eq, faceTable_eq = vertTable_target.copy(), heTable_target.copy(), faceTable_target.copy()
 
 # defining the L_box as the sqrt(#cells)
