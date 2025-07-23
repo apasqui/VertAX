@@ -615,6 +615,123 @@ def outer_implicit(vertTable,
     return vert_params, he_params, face_params
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##########################
+## ADJOINT STATE METHOD ##
+##########################
+
+def outer_adjoint_state(vertTable, 
+                  heTable, 
+                  faceTable, 
+                  selected_verts,
+                  selected_hes,
+                  selected_faces,
+                  vert_params, 
+                  he_params, 
+                  face_params,
+                  vertTable_target,
+                  heTable_target,
+                  faceTable_target, 
+                  L_in,
+                  L_out,
+                  solver_inner,
+                  solver_outer, 
+                  min_dist_T1,
+                  iterations_max,
+                  tolerance,
+                  patience,
+                  image_target):
+    
+    def L_in_flatten(vertTable_flatten, heTable, faceTable, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params):
+        vertTable_tmp = jnp.hstack((vertTable_flatten.reshape(len(vertTable_flatten)//2,2),jnp.zeros((len(vertTable_flatten)//2,1))))
+        return L_in(vertTable_tmp, heTable, faceTable, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params)
+
+    (vertTable_eq, heTable_eq, faceTable_eq), L_in_value = inner_optax(vertTable,
+                                                                        heTable, 
+                                                                        faceTable,
+                                                                        selected_verts,
+                                                                        selected_hes,
+                                                                        selected_faces,  
+                                                                        vert_params,
+                                                                        he_params,
+                                                                        face_params,
+                                                                        L_in, 
+                                                                        solver_inner,  
+                                                                        min_dist_T1,
+                                                                        iterations_max,
+                                                                        tolerance,
+                                                                        patience)
+    
+    # jax.debug.print("{}", jacfwd(L_in_flatten,argnums=0)(vertTable_eq[:,:2].flatten(), heTable_eq, faceTable_eq, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params).shape)
+    # jax.debug.print("{}", jacfwd(jacfwd(L_in_flatten,argnums=0),argnums=0)(vertTable_eq[:,:2].flatten(), heTable_eq, faceTable_eq, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params).shape)
+    # exit()
+    
+    H=jacfwd(jacfwd(L_in_flatten,argnums=0),argnums=0)(vertTable_eq[:,:2].flatten(), heTable_eq, faceTable_eq, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params)
+
+    crossderivative_verts=jacfwd(jacfwd(L_in_flatten,argnums=6),argnums=0)(vertTable_eq[:,:2].flatten(), heTable_eq, faceTable_eq, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params)
+    crossderivative_hes=jacfwd(jacfwd(L_in_flatten,argnums=7),argnums=0)(vertTable_eq[:,:2].flatten(), heTable_eq, faceTable_eq, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params)
+    crossderivative_faces=jacfwd(jacfwd(L_in_flatten,argnums=8),argnums=0)(vertTable_eq[:,:2].flatten(), heTable_eq, faceTable_eq, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params)
+    
+    # jax.debug.print("{}", crossderivative_verts.shape)
+    # jax.debug.print("{}", crossderivative_hes.shape)
+    # jax.debug.print("{}", crossderivative_faces.shape)
+    # exit()
+
+    gradout=grad(L_out,argnums=0)(vertTable_eq,heTable_eq,faceTable_eq,selected_verts,selected_hes,selected_faces,vertTable_target,heTable_target,faceTable_target,image_target)[:,:2].flatten()
+
+    Lambda=-jax.numpy.linalg.solve(H,gradout)
+
+    grad_verts = crossderivative_verts @ Lambda
+    grad_hes = crossderivative_hes @ Lambda 
+    grad_faces = crossderivative_faces @ Lambda
+
+    params = {'vert_params': vert_params, 'he_params': he_params, 'face_params': face_params}
+    grads = {'vert_params': grad_verts, 'he_params': grad_hes, 'face_params': grad_faces}
+    opt_state = solver_outer.init(params)
+    updates, opt_state = solver_outer.update(grads, opt_state, params)
+    updated_params = optax.apply_updates(params, updates)
+    vert_params = updated_params['vert_params']
+    he_params = updated_params['he_params']
+    face_params = updated_params['face_params']
+    
+    return vert_params, he_params, face_params
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #############
 ## WRAPPER ##
 #############
@@ -770,4 +887,45 @@ def bilevel_opt(vertTable,
                                                     tolerance,
                                                     patience)
 
+    elif method == 'as': 
+
+        vert_params, he_params, face_params = outer_adjoint_state(vertTable, 
+                                                                heTable, 
+                                                                faceTable, 
+                                                                selected_verts,
+                                                                selected_hes,
+                                                                selected_faces,
+                                                                vert_params, 
+                                                                he_params, 
+                                                                face_params,
+                                                                vertTable_target,
+                                                                heTable_target,
+                                                                faceTable_target, 
+                                                                L_in,
+                                                                L_out,
+                                                                solver_inner,
+                                                                solver_outer, 
+                                                                min_dist_T1,
+                                                                iterations_max,
+                                                                tolerance,
+                                                                patience,
+                                                                image_target)
+        
+        (vertTable, heTable, faceTable), loss = inner_optax(vertTable,
+                                                    heTable, 
+                                                    faceTable,
+                                                    selected_verts,
+                                                    selected_hes,
+                                                    selected_faces,  
+                                                    vert_params,
+                                                    he_params,
+                                                    face_params,
+                                                    L_in, 
+                                                    solver_inner,  
+                                                    min_dist_T1,
+                                                    iterations_max,
+                                                    tolerance,
+                                                    patience)
+
+        
     return vertTable, heTable, faceTable, vert_params, he_params, face_params
