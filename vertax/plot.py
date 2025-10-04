@@ -13,7 +13,7 @@ def get_cmap(n, name='hsv'):
     return plt.cm.get_cmap(name, n)
 
 
-def plot_geograph(vertTable, heTable, faceTable, L_box, flip_x=False, flip_y=False, multicolor=True, lines=True, vertices=True, path='.', name='-1', save=False, show=True):
+def plot_mesh(vertTable, heTable, faceTable, L_box, flip_x=False, flip_y=False, multicolor=True, lines=True, vertices=True, path='.', name='-1', save=False, show=True):
 
     cmap = get_cmap(len(faceTable))
 
@@ -102,7 +102,7 @@ def plot_geograph(vertTable, heTable, faceTable, L_box, flip_x=False, flip_y=Fal
 
     plt.clf()
 
-def plot_geograph_selected(vertTable, heTable, faceTable, selected_verts, selected_hes, selected_faces, L_box, flip_x=False, flip_y=False, multicolor=True, lines=True, vertices=True, path='.', name='-1', save=False, show=True):
+def plot_mesh_selected(vertTable, heTable, faceTable, selected_verts, selected_hes, selected_faces, L_box, flip_x=False, flip_y=False, multicolor=True, lines=True, vertices=True, path='.', name='-1', save=False, show=True):
 
     cmap = get_cmap(len(faceTable))
 

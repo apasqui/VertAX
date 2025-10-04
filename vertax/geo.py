@@ -46,6 +46,20 @@ def get_length(he, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.arra
     x1, y1 = vertTable.at[v_target, :2].get() + jnp.array([he_offset_x1, he_offset_y1])  # target vertex
 
     length = jnp.hypot(x1 - x0, y1 - y0)  
+    return length
+
+@jit
+def get_length_with_offset(he, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+    L_box = jnp.sqrt(len(faceTable))
+    v_source = heTable.at[he, 3].get()
+    v_target = heTable.at[he, 4].get()
+
+    x0, y0 = vertTable.at[v_source, :2].get()  # source vertex
+    he_offset_x1 = heTable.at[he, 6].get() * L_box  # target offset
+    he_offset_y1 = heTable.at[he, 7].get() * L_box
+    x1, y1 = vertTable.at[v_target, :2].get() + jnp.array([he_offset_x1, he_offset_y1])  # target vertex
+
+    length = jnp.hypot(x1 - x0, y1 - y0)  
     return jnp.array([length, he_offset_x1, he_offset_y1])
 
 @jit
@@ -56,7 +70,7 @@ def get_perimeter(face,
                   ):
 
     def fun(he, res):
-        return get_length(he, vertTable, heTable, faceTable)
+        return get_length_with_offset(he, vertTable, heTable, faceTable)
 
     return sum_edges(face, heTable, faceTable, fun)[0]
 

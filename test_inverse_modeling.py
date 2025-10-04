@@ -1,0 +1,141 @@
+# Package imports
+from vertax.start import create_mesh_from_seeds
+from vertax.geo import get_area , get_length 
+from vertax.cost import cost_v2v
+from vertax.opt import inner_opt, bilevel_opt
+from vertax.plot import plot_mesh
+import jax.numpy as jnp 
+import jax.random
+from jax import jit , vmap 
+import optax
+
+# Settings
+n_cells = 20
+min_dist_T1 = 0.005
+mu_tensions = 1.2 
+std_tensions = 0.1 
+mu_areas = 1.0 
+std_areas = 0.
+
+# Solvers
+sgd = optax.sgd(learning_rate=0.01)
+adam = optax.adam(learning_rate=0.0001, nesterov=True) 
+iterations_max = 1000
+tolerance = 1e-4
+patience = 5
+epochs = 5000
+
+# Energy function
+@jit
+def area_part(face, face_param, vertTable, heTable, faceTable):
+    a = get_area(face, vertTable, heTable, faceTable)
+    return (a - face_param) ** 2
+@jit
+def hedge_part(he, he_param, vertTable, heTable, faceTable):
+    l = get_length(he, vertTable, heTable, faceTable)
+    return he_param * l
+@jit
+def energy(vertTable, heTable, faceTable, vert_params, he_params, face_params):
+    K_areas = 20
+    mapped_areas_part = lambda face, face_param: area_part(face, face_param, vertTable, heTable, faceTable)
+    mapped_hedges_part = lambda he, he_param: hedge_part(he, he_param, vertTable, heTable, faceTable)
+    areas_part = vmap(mapped_areas_part)(jnp.arange(len(faceTable)), face_params)
+    hedges_part = vmap(mapped_hedges_part)(jnp.arange(2, len(heTable)), he_params[2:])
+    return (2 * he_params_reference * get_length(0, vertTable, heTable, faceTable)) + jnp.sum(hedges_part) + (0.5 * K_areas) * jnp.sum(areas_part)
+
+# Initial condition (vertices)
+key = jax.random.PRNGKey(0)  # change the seed for different results
+L_box = jnp.sqrt(n_cells)
+seeds = L_box * jax.random.uniform(key, shape=(n_cells, 2))
+vertTable, heTable, faceTable = create_mesh_from_seeds(seeds)
+
+# Initial condition (parameters)
+key = jax.random.PRNGKey(1)  # change the seed for different results
+vert_params = jnp.asarray([0.])
+he_params = mu_tensions + std_tensions * jax.random.normal(key, shape=(len(heTable) // 2,))
+he_params = jnp.repeat(he_params, 2)
+he_params_reference = he_params[0]
+face_params = jnp.asarray(mu_areas + std_areas * jax.random.normal(key, shape=(n_cells,)))  
+
+# Energy minimization (init cond equilibrium)
+(vertTable, heTable, faceTable), energies = inner_opt(
+    vertTable, heTable, faceTable, 
+    vert_params, he_params, face_params, 
+    energy, sgd, min_dist_T1, 
+    iterations_max, tolerance, patience, 
+    selected_verts=None, selected_hes=None, selected_faces=None)
+
+# Target (vertices)
+vertTable_target, heTable_target, faceTable_target = vertTable.copy(), heTable.copy(), faceTable.copy()
+
+# Target (parameters)
+key = jax.random.PRNGKey(2)  # change the seed for different results
+vert_params_target = jnp.asarray([0.])
+he_params_target = mu_tensions + std_tensions * jax.random.normal(key, shape=(len(heTable_target) // 2,))
+he_params_target = jnp.repeat(he_params_target, 2)
+he_params_reference_target = he_params_target[0]
+face_params_target = jnp.asarray(mu_areas + std_areas * jax.random.normal(key, shape=(n_cells,)))  
+
+# Energy minimization (target equilibrium)
+(vertTable_target, heTable_target, faceTable_target), energies_target = inner_opt(
+    vertTable_target, heTable_target, faceTable_target, 
+    vert_params_target, he_params_target, face_params_target, 
+    energy, sgd, min_dist_T1, 
+    iterations_max, tolerance, patience, 
+    selected_verts=None, selected_hes=None, selected_faces=None)
+
+# Plotting
+plot_mesh(vertTable, heTable, faceTable, 
+          L_box=L_box, multicolor=True, lines=True, vertices=False, 
+          path='./', name='energy_minimization', show=False, save=False)
+plot_mesh(vertTable_target, heTable_target, faceTable_target, 
+          L_box=L_box, multicolor=True, lines=True, vertices=False, 
+          path='./', name='energy_minimization_target', show=False, save=True)
+
+# Areas target are the actual target ones at equilibrium (and remain fixed during BO)
+mapped_fixed_areas_target = lambda face: get_area(face, vertTable_target, heTable_target, faceTable)
+fixed_areas_target = vmap(mapped_fixed_areas_target)(jnp.arange(len(faceTable)))
+
+# Redefined energy function (with fixed areas and fixed first tension equal to the target ones)
+@jit
+def area_part(face, vertTable, heTable, faceTable):
+    a = get_area(face, vertTable, heTable, faceTable)
+    return (a - fixed_areas_target[face]) ** 2
+@jit
+def hedge_part(he, he_param, vertTable, heTable, faceTable):
+    l = get_length(he, vertTable, heTable, faceTable)
+    return he_param * l
+@jit
+def energy(vertTable, heTable, faceTable, vert_params, he_params, face_params):
+    K_areas = 20
+    mapped_areas_part = lambda face: area_part(face, vertTable, heTable, faceTable)
+    mapped_hedges_part = lambda he, he_param: hedge_part(he, he_param, vertTable, heTable, faceTable)
+    areas_part = vmap(mapped_areas_part)(jnp.arange(len(faceTable)))
+    hedges_part = vmap(mapped_hedges_part)(jnp.arange(2, len(heTable)), he_params[2:])
+    return (2 * he_params_reference_target * get_length(0, vertTable, heTable, faceTable)) + jnp.sum(hedges_part) + (0.5 * K_areas) * jnp.sum(areas_part)
+
+for j in range(epochs+1):
+
+    print('epoch: '+str(j)+'/'+str(epochs)+'\t cost: '+str(cost_v2v(
+        vertTable, heTable, faceTable, 
+        vertTable_target, heTable_target, faceTable_target, 
+        selected_verts=None, selected_hes=None, selected_faces=None, image_target=None
+        )))
+
+    (vertTable, heTable, faceTable, vert_params, he_params, face_params), cost = bilevel_opt(
+        vertTable, heTable, faceTable, 
+        vert_params, he_params, face_params, 
+        vertTable_target, heTable_target, faceTable_target, 
+        L_in=energy, L_out=cost_v2v, solver_inner=sgd, solver_outer=adam, 
+        min_dist_T1=min_dist_T1, iterations_max=iterations_max, tolerance=tolerance, patience=patience,
+        selected_verts=None, selected_hes=None, selected_faces=None, 
+        image_target=None, beta=None, method='as'   # change to 'ep', 'id', 'as' 
+        ) 
+    
+    if j % 100 == 0:
+        # Plotting/saving
+        plot_mesh(
+        vertTable, heTable, faceTable, 
+        L_box, multicolor=True, lines=True, vertices=False, 
+        path='./', name='bilevel_result_'+str(j), show=False, save=True
+        )

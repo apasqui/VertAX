@@ -2,26 +2,29 @@ import os
 import numpy as np
 import jax.numpy as jnp
 import tifffile as tiff
-# from cellpose import models
 from scipy.ndimage import gaussian_filter, distance_transform_edt 
-# from skimage.measure import label
 from scipy.spatial import Voronoi
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from vertax.plot import plot_geograph
+from vertax.plot import plot_mesh
 
+def load_mesh(path: str):
 
-def load_geograph(path: str):
     return jnp.load(path + 'vertTable.npy'), jnp.load(path + 'heTable.npy'), jnp.load(path + 'faceTable.npy')
 
-def save_geograph(path: str, vertTable, heTable, faceTable):
+def save_mesh(path: str, 
+              vertTable: jnp.array, 
+              heTable: jnp.array, 
+              faceTable: jnp.array):
+    
     os.makedirs(path, exist_ok=True)
     jnp.save(path+'vertTable', vertTable)
     jnp.save(path+'heTable', heTable)
     jnp.save(path+'faceTable', faceTable)
 
-
-def create_geograph_from_seeds(seeds: np.array, path: str, show=False):
+def create_mesh_from_seeds(seeds: jnp.array, 
+                           path: str='./', 
+                           show: bool=False):
 
     n_cells = len(seeds)
     L_box = np.sqrt(n_cells)
@@ -161,13 +164,13 @@ def create_geograph_from_seeds(seeds: np.array, path: str, show=False):
 
     # HALF EDGE DATA STRUCTURE
 
-    # reciprocating edges
+    # Reciprocating edges
     periodic_voronoi_half_edges = []
     for e in periodic_voronoi_edges:
         periodic_voronoi_half_edges.append(e)
         periodic_voronoi_half_edges.append((e[1], e[0]))
 
-    # finding clockwise (or counterclockwise) half edge set for each face
+    # Finding clockwise (or counterclockwise) half edge set for each face
     ordered_edges_periodic_voronoi_faces = []
     for face in periodic_voronoi_faces:
         edges_face = []
@@ -238,7 +241,7 @@ def create_geograph_from_seeds(seeds: np.array, path: str, show=False):
                 break
         vertTable[i][0] = pos[0]  # x pos vert
         vertTable[i][1] = pos[1]  # y pos vert
-        vertTable[i][2] = idx_selected_he  # he vert source (random among three)
+        # vertTable[i][2] = idx_selected_he  # he vert source (random among three)
 
     faceTable = np.zeros((len(periodic_voronoi_faces), 1))
     for i, hedges_face in enumerate(ordered_edges_periodic_voronoi_faces):
@@ -261,47 +264,52 @@ def create_geograph_from_seeds(seeds: np.array, path: str, show=False):
         heTable[i][6] = offsets[he][0]  # he_offset x vert target
         heTable[i][7] = offsets[he][1]  # he_offset y vert target
 
-    os.makedirs(path + 'simulation', exist_ok=True)
+    os.makedirs(path + 'simulation_init', exist_ok=True)
 
-    np.savetxt(path + 'simulation/vertTable.csv', vertTable, delimiter='\t', fmt='%1.18f')
-    np.savetxt(path + 'simulation/faceTable.csv', faceTable, delimiter='\t', fmt='%1.0d')
-    np.savetxt(path + 'simulation/heTable.csv', heTable, delimiter='\t', fmt='%1.0d')
+    np.savetxt(path + 'simulation_init/vertTable.csv', vertTable, delimiter='\t', fmt='%1.18f')
+    np.savetxt(path + 'simulation_init/faceTable.csv', faceTable, delimiter='\t', fmt='%1.0d')
+    np.savetxt(path + 'simulation_init/heTable.csv', heTable, delimiter='\t', fmt='%1.0d')
 
-    vertTable = np.loadtxt(path + 'simulation/vertTable.csv', delimiter='\t', dtype=np.float64)
-    faceTable = np.loadtxt(path + 'simulation/faceTable.csv', delimiter='\t', dtype=np.int32)
-    heTable = np.loadtxt(path + 'simulation/heTable.csv', delimiter='\t', dtype=np.int32)
+    vertTable = np.loadtxt(path + 'simulation_init/vertTable.csv', delimiter='\t', dtype=np.float64)
+    faceTable = np.loadtxt(path + 'simulation_init/faceTable.csv', delimiter='\t', dtype=np.int32)
+    heTable = np.loadtxt(path + 'simulation_init/heTable.csv', delimiter='\t', dtype=np.int32)
 
-    np.save(path + 'simulation/vertTable', vertTable)
-    np.save(path + 'simulation/faceTable', faceTable)
-    np.save(path + 'simulation/heTable', heTable)
+    np.save(path + 'simulation_init/vertTable', vertTable)
+    np.save(path + 'simulation_init/faceTable', faceTable)
+    np.save(path + 'simulation_init/heTable', heTable)
 
-    # os.remove(path + 'simulation/vertTable.csv')
-    # os.remove(path + 'simulation/faceTable.csv')
-    # os.remove(path + 'simulation/heTable.csv')
+    # os.remove(path + 'simulation_init/vertTable.csv')
+    # os.remove(path + 'simulation_init/faceTable.csv')
+    # os.remove(path + 'simulation_init/heTable.csv')
 
     if show:
-        img_jax = plot_geograph(vertTable.astype(float), 
-                      heTable.astype(int), 
-                      faceTable.astype(int), 
-                      L_box=L_box, 
-                      flip_x=False,
-                      flip_y=False,
-                      multicolor=True, 
-                      lines=True, 
-                      vertices=False, 
-                      path= path + 'simulation/', 
-                      name='simulation', 
-                      save=True, 
-                      show=True)
+        plot_mesh(vertTable.astype(float), 
+                  heTable.astype(int), 
+                  faceTable.astype(int), 
+                  L_box=L_box, 
+                  flip_x=False,
+                  flip_y=False,
+                  multicolor=True, 
+                  lines=True, 
+                  vertices=False, 
+                  path= path + 'simulation_init/', 
+                  name='simulation_init', 
+                  save=True, 
+                  show=True)
 
-    return jnp.load(path + 'simulation/vertTable.npy'), jnp.load(path + 'simulation/heTable.npy'), jnp.load(path + 'simulation/faceTable.npy')
+    return jnp.load(path + 'simulation_init/vertTable.npy'), jnp.load(path + 'simulation_init/heTable.npy'), jnp.load(path + 'simulation_init/faceTable.npy')
 
 
-def create_geograph_from_image(image: np.array, path: str, show=False):
+def create_mesh_from_image(image: np.array,
+                           path: str='./', 
+                           show: bool=False):
     
     def segment(image):
+
+        from cellpose import models
+
         # Ensure the image is in the correct format 
-        if len(image.shape) == 2:  
+        if len(image.shape)==2:  
             image = np.expand_dims(image, axis=-1)  # Convert to (H, W, 1)
         # Blur the image with gaussian filter sigma 10
         blurred_image = gaussian_filter(image, sigma=10)
@@ -309,11 +317,15 @@ def create_geograph_from_image(image: np.array, path: str, show=False):
         model = models.Cellpose(model_type='cyto', gpu=True)
         mask, flows, styles, diams = model.eval(blurred_image, channels=[0, 0], diameter=None)
         # Save the resulting image 
-        output_path = "segmented_image.tiff"
+        output_path = path + "segmented_image.tiff"
         tiff.imwrite(output_path, mask.astype(np.uint16), imagej=True)
+        
         return mask
 
     def refine_and_pad(mask):
+        
+        from skimage.measure import label
+        
         # Relabel the mask
         labeled_mask = label(mask)
         unique_labels, counts = np.unique(labeled_mask, return_counts=True)
@@ -337,11 +349,13 @@ def create_geograph_from_image(image: np.array, path: str, show=False):
                             ((height, height), (width, width)),  # Reflect padding on top and left only
                             mode='reflect')
         # Save the resulting image 
-        output_path = "refined_and_padded_image.tiff"
+        output_path = path + "refined_and_padded_image.tiff"
         tiff.imwrite(output_path, padded_image.astype(np.uint16), imagej=True)
+        
         return label(padded_image) 
 
     def find_vertices_edges_faces(mask):
+        
         # Find unique three-junction points
         three_junctions = []
         unique_label_sets = set()
@@ -380,6 +394,7 @@ def create_geograph_from_image(image: np.array, path: str, show=False):
             label_junctions = [idx for idx, labels in junction_labels.items() if label_i in labels]
             if len(label_junctions) > 2:
                 faces.append(label_junctions)
+        
         return three_junctions, edges, faces
 
     image_shape = image.shape
@@ -389,16 +404,15 @@ def create_geograph_from_image(image: np.array, path: str, show=False):
     input_image = refine_and_pad(segment(image))
 
     # Find vertices, edges, faces
-    print('Finding vertices, edges, faces...')
     vertices, edges, faces = find_vertices_edges_faces(input_image)
 
     # Saving vertices, edges, faces
-    np.save('./vertices.npy', vertices)
-    with open('edges.txt', 'w') as file:
+    np.save(path + './vertices.npy', vertices)
+    with open(path + 'edges.txt', 'w') as file:
         for row in edges:
             # Convert each row to a string with tab separation, then write to the file
             file.write('\t'.join(map(str, row)) + '\n')
-    with open('faces.txt', 'w') as file:
+    with open(path + 'faces.txt', 'w') as file:
         for row in faces:
             # Convert each row to a string with tab separation, then write to the file
             file.write('\t'.join(map(str, row)) + '\n')
@@ -515,13 +529,13 @@ def create_geograph_from_image(image: np.array, path: str, show=False):
 
     # HALF EDGE DATA STRUCTURE
 
-    # reciprocating edges
+    # Reciprocating edges
     periodic_voronoi_half_edges = []
     for e in periodic_voronoi_edges:
         periodic_voronoi_half_edges.append(e)
         periodic_voronoi_half_edges.append((e[1], e[0]))
 
-    # finding clockwise (or counterclockwise) half edge set for each face
+    # Finding clockwise (or counterclockwise) half edge set for each face
     ordered_edges_periodic_voronoi_faces = []
     for j, face in enumerate(periodic_voronoi_faces):
         edges_face = []
@@ -586,7 +600,7 @@ def create_geograph_from_image(image: np.array, path: str, show=False):
                 break
         vertTable[i][0] = (pos[0]-L_min)  # y pos vert
         vertTable[i][1] = (pos[1]-L_min)  # x pos vert
-        vertTable[i][2] = idx_selected_he  # he vert source (random among three)
+        # vertTable[i][2] = idx_selected_he  # he vert source (random among three)
 
     faceTable = np.zeros((len(periodic_voronoi_faces), 1))
     for i, hedges_face in enumerate(ordered_edges_periodic_voronoi_faces):
@@ -609,23 +623,23 @@ def create_geograph_from_image(image: np.array, path: str, show=False):
         heTable[i][6] = offsets[he][0]  # he_offset x vert target
         heTable[i][7] = offsets[he][1]  # he_offset y vert target
 
-    os.makedirs(path + 'simulation/', exist_ok=True)
+    os.makedirs(path + 'simulation_init/', exist_ok=True)
 
-    np.savetxt(path + 'simulation/vertTable.csv', vertTable, delimiter='\t', fmt='%1.18f')
-    np.savetxt(path + 'simulation/faceTable.csv', faceTable, delimiter='\t', fmt='%1.0d')
-    np.savetxt(path + 'simulation/heTable.csv', heTable, delimiter='\t', fmt='%1.0d')
+    np.savetxt(path + 'simulation_init/vertTable.csv', vertTable, delimiter='\t', fmt='%1.18f')
+    np.savetxt(path + 'simulation_init/faceTable.csv', faceTable, delimiter='\t', fmt='%1.0d')
+    np.savetxt(path + 'simulation_init/heTable.csv', heTable, delimiter='\t', fmt='%1.0d')
 
-    vertTable = np.loadtxt(path + 'simulation/vertTable.csv', delimiter='\t', dtype=np.float64)
-    faceTable = np.loadtxt(path + 'simulation/faceTable.csv', delimiter='\t', dtype=np.int32)
-    heTable = np.loadtxt(path + 'simulation/heTable.csv', delimiter='\t', dtype=np.int32)
+    vertTable = np.loadtxt(path + 'simulation_init/vertTable.csv', delimiter='\t', dtype=np.float64)
+    faceTable = np.loadtxt(path + 'simulation_init/faceTable.csv', delimiter='\t', dtype=np.int32)
+    heTable = np.loadtxt(path + 'simulation_init/heTable.csv', delimiter='\t', dtype=np.int32)
 
-    np.save(path + 'simulation/vertTable', vertTable)
-    np.save(path + 'simulation/faceTable', faceTable)
-    np.save(path + 'simulation/heTable', heTable)
+    np.save(path + 'simulation_init/vertTable', vertTable)
+    np.save(path + 'simulation_init/faceTable', faceTable)
+    np.save(path + 'simulation_init/heTable', heTable)
 
-    # os.remove(path + 'simulation/vertTable.csv')
-    # os.remove(path + 'simulation/faceTable.csv')
-    # os.remove(path + 'simulation/heTable.csv')
+    # os.remove(path + 'simulation_init/vertTable.csv')
+    # os.remove(path + 'simulation_init/faceTable.csv')
+    # os.remove(path + 'simulation_init/heTable.csv')
 
     if show:
         # Define a gradient colormap (e.g., 'viridis')
@@ -664,18 +678,18 @@ def create_geograph_from_image(image: np.array, path: str, show=False):
             linewidth=2)
         plt.show()
 
-        img_jax = plot_geograph(vertTable.astype(float), 
-                    heTable.astype(int), 
-                    faceTable.astype(int), 
-                    L_box=(2*L_box), 
-                    flip_x=False, 
-                    flip_y=True,
-                    multicolor=True, 
-                    lines=True, 
-                    vertices=False, 
-                    path= path + 'simulation/', 
-                    name='simulation', 
-                    save=True, 
-                    show=True)
+        plot_mesh(vertTable.astype(float), 
+                  heTable.astype(int), 
+                  faceTable.astype(int), 
+                  L_box=(2*L_box), 
+                  flip_x=False, 
+                  flip_y=True,
+                  multicolor=True, 
+                  lines=True, 
+                  vertices=False, 
+                  path= path + 'simulation_init/', 
+                  name='simulation_init', 
+                  save=True, 
+                  show=True)
 
-    return jnp.load(path + 'simulation/vertTable.npy'), jnp.load(path + 'simulation/heTable.npy'), jnp.load(path + 'simulation/faceTable.npy')
+    return jnp.load(path + 'simulation_init/vertTable.npy'), jnp.load(path + 'simulation_init/heTable.npy'), jnp.load(path + 'simulation_init/faceTable.npy')

@@ -122,16 +122,16 @@ def gaussian_blur_line_segments(x):
 ##################
 
 @jit
-def cost_v2v(vertTable,
-             heTable,
-             faceTable,
-             selected_verts,
-             selected_hes,
-             selected_faces,
-             vertTable_target,
-             heTable_target,
-             faceTable_target,
-             image_target=None):
+def cost_v2v(vertTable, heTable, faceTable,
+             vertTable_target, heTable_target, faceTable_target,
+             selected_verts=None, selected_hes=None, selected_faces=None, image_target=None):
+    
+    if selected_verts is None:
+        selected_verts = jnp.arange(vertTable.shape[0])
+    if selected_hes is None:
+        selected_hes = jnp.arange(heTable.shape[0])
+    if selected_faces is None:
+        selected_faces = jnp.arange(faceTable.shape[0])
 
     L_box = jnp.sqrt(len(faceTable))
 
