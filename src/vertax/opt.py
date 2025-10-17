@@ -1,3 +1,7 @@
+"""Optimization methods for VertAX."""
+
+from enum import Enum
+
 import jax
 import jax.numpy as jnp
 import optax
@@ -5,6 +9,18 @@ from jax import grad, jacfwd, jit, lax
 
 from vertax.geo import update_pbc
 from vertax.topo import update_T1
+
+
+class OptimizationTarget(Enum):
+    """What the minimize function will try to optimize."""
+
+    VERTICES = 0
+    EDGES = 1
+    FACES = 2
+    VERTEX_PARAMETERS = 3
+    EDGE_PARAMETERS = 4
+    FACE_PARAMETERS = 5
+
 
 ###############################
 ## AUTOMATIC DIFFERENTIATION ##
@@ -27,7 +43,7 @@ def minimize(
     selected_verts=None,
     selected_hes=None,
     selected_faces=None,
-    argnums=0,
+    optimization_target: OptimizationTarget = OptimizationTarget.VERTICES,
 ):
     if selected_verts is None:
         selected_verts = jnp.arange(vertTable.shape[0])
@@ -40,28 +56,31 @@ def minimize(
     patience = int(patience)
 
     # --- select the target array and indices for the optimizer ---
-    if argnums == 0:
-        x0, sel = vertTable, selected_verts
-    elif argnums == 1:
-        x0, sel = heTable, selected_hes
-    elif argnums == 2:
-        x0, sel = faceTable, selected_faces
-    elif argnums == 3:
-        x0, sel = vert_params, selected_verts
-    elif argnums == 4:
-        x0, sel = he_params, selected_hes
-    elif argnums == 5:
-        x0, sel = face_params, selected_faces
-    else:
-        raise ValueError("argnums must be in {0,1,2,3,4,5}")
+    match optimization_target:
+        case OptimizationTarget.VERTICES:
+            x0, sel = vertTable, selected_verts
+        case OptimizationTarget.EDGES:
+            x0, sel = heTable, selected_hes
+        case OptimizationTarget.FACES:
+            x0, sel = faceTable, selected_faces
+        case OptimizationTarget.VERTEX_PARAMETERS:
+            x0, sel = vert_params, selected_verts
+        case OptimizationTarget.EDGE_PARAMETERS:
+            x0, sel = he_params, selected_hes
+        case OptimizationTarget.FACE_PARAMETERS:
+            x0, sel = face_params, selected_faces
+        case _:
+            msg = f"Optimization target must be an OptimizationTarget. Got {optimization_target}."
+            raise ValueError(msg)
 
     # --- check if the target is float-type before differentiating ---
     if not jnp.issubdtype(x0.dtype, jnp.floating):
-        raise TypeError(
-            f"Cannot differentiate argnums={argnums}: "
+        msg = (
+            f"Cannot differentiate {optimization_target}: "
             f"target array has dtype {x0.dtype}. "
             f"Use a float array (vertTable, vert_params, he_params, face_params) only."
         )
+        raise TypeError(msg)
 
     opt_state = solver.init(x0)
 
@@ -102,25 +121,26 @@ def minimize(
         should_stop = (stagnation_count >= patience) | (step_count >= iterations_max - 1)
 
         # 3) Gradient wrt chosen argnums
-        grads = jacfwd(L_in, argnums=argnums)(vt, ht, ft, vp, hp, fp)
+        grads = jacfwd(L_in, argnums=optimization_target.value)(vt, ht, ft, vp, hp, fp)
 
         # 4) Optimizer update
         updates, opt_state = solver.update(grads, opt_state)
 
         # 5) Apply updates to the chosen array on selected indices
         updates_sel = updates.at[sel].get()
-        if argnums == 0:
-            vt = vt.at[sel].set(vt[sel] + updates_sel)
-        elif argnums == 1:
-            ht = ht.at[sel].set(ht[sel] + updates_sel)
-        elif argnums == 2:
-            ft = ft.at[sel].set(ft[sel] + updates_sel)
-        elif argnums == 3:
-            vp = vp.at[sel].set(vp[sel] + updates_sel)
-        elif argnums == 4:
-            hp = hp.at[sel].set(hp[sel] + updates_sel)
-        elif argnums == 5:
-            fp = fp.at[sel].set(fp[sel] + updates_sel)
+        match optimization_target:
+            case OptimizationTarget.VERTICES:
+                vt = vt.at[sel].set(vt[sel] + updates_sel)
+            case OptimizationTarget.EDGES:
+                ht = ht.at[sel].set(ht[sel] + updates_sel)
+            case OptimizationTarget.FACES:
+                ft = ft.at[sel].set(ft[sel] + updates_sel)
+            case OptimizationTarget.VERTEX_PARAMETERS:
+                vp = vp.at[sel].set(vp[sel] + updates_sel)
+            case OptimizationTarget.EDGE_PARAMETERS:
+                hp = hp.at[sel].set(hp[sel] + updates_sel)
+            case OptimizationTarget.FACE_PARAMETERS:
+                fp = fp.at[sel].set(fp[sel] + updates_sel)
 
         # 6) Geometry updates
         vt, ht, ft = update_pbc(vt, ht, ft)
@@ -179,7 +199,7 @@ def inner_opt(
     selected_hes=None,
     selected_faces=None,
 ):
-    # Use the general minimize function with argnums=0 (optimize vertTable)
+    # Use the general minimize function with VERTICES (optimize vertTable)
     (vt_f, ht_f, ft_f, vp_f, hp_f, fp_f), L_hist = minimize(
         vertTable,
         heTable,
@@ -196,7 +216,7 @@ def inner_opt(
         selected_verts=selected_verts,
         selected_hes=selected_hes,
         selected_faces=selected_faces,
-        argnums=0,
+        optimization_target=OptimizationTarget.VERTICES,
     )
 
     # Return updated arrays and loss history
@@ -465,7 +485,7 @@ def forward(
         selected_verts=selected_verts,
         selected_hes=selected_hes,
         selected_faces=selected_faces,
-        argnums=0,
+        optimization_target=OptimizationTarget.VERTICES,
     )
 
     return (vt_f, ht_f, ft_f), final_L_list

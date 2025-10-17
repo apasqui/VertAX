@@ -8,7 +8,7 @@ from jax import jit, vmap
 from numpy.testing import assert_allclose
 
 from vertax.geo import get_area, get_perimeter
-from vertax.opt import minimize
+from vertax.opt import minimize, OptimizationTarget
 from vertax.start import create_mesh_from_seeds, load_mesh
 
 
@@ -66,7 +66,7 @@ def test_minimization_for_regressions() -> None:
         selected_verts=None,
         selected_hes=None,
         selected_faces=None,
-        argnums=0,
+        optimization_target=OptimizationTarget.VERTICES,
     )
 
     t_end = perf_counter()
