@@ -1,17 +1,17 @@
 # Package imports
 from time import perf_counter
 
-from numpy.testing import assert_allclose
-
-from vertax.start import create_mesh_from_seeds, load_mesh
-from vertax.geo import get_area, get_length
-from vertax.cost import cost_v2v
-from vertax.opt import inner_opt, bilevel_opt
-from vertax.plot import plot_mesh
 import jax.numpy as jnp
 import jax.random
-from jax import jit, vmap
 import optax
+from jax import jit, vmap
+from numpy.testing import assert_allclose
+
+from vertax.cost import cost_v2v
+from vertax.geo import get_area, get_length
+from vertax.opt import bilevel_opt, inner_opt
+from vertax.plot import plot_mesh
+from vertax.start import create_mesh_from_seeds, load_mesh
 
 t_start = perf_counter()
 
