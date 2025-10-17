@@ -1,4 +1,5 @@
-# Package imports
+"""Test the whole pipeline of bilevel optimization."""
+
 from time import perf_counter
 
 import jax.numpy as jnp
@@ -9,8 +10,7 @@ from numpy.testing import assert_allclose
 
 from vertax.cost import cost_v2v
 from vertax.geo import get_area, get_length
-from vertax.opt import bilevel_opt, inner_opt
-from vertax.plot import plot_mesh
+from vertax.opt import BilevelOptimizationMethod, bilevel_opt, inner_opt
 from vertax.start import create_mesh_from_seeds, load_mesh
 
 
@@ -42,14 +42,19 @@ def test_inverse_modeling_for_regressions() -> None:
 
     @jit
     def hedge_part(he, he_param, vertTable, heTable, faceTable):
-        l = get_length(he, vertTable, heTable, faceTable)
-        return he_param * l
+        edge_lengths = get_length(he, vertTable, heTable, faceTable)
+        return he_param * edge_lengths
 
     @jit
     def energy(vertTable, heTable, faceTable, vert_params, he_params, face_params):
         K_areas = 20
-        mapped_areas_part = lambda face, face_param: area_part(face, face_param, vertTable, heTable, faceTable)
-        mapped_hedges_part = lambda he, he_param: hedge_part(he, he_param, vertTable, heTable, faceTable)
+
+        def mapped_areas_part(face, face_param):
+            return area_part(face, face_param, vertTable, heTable, faceTable)
+
+        def mapped_hedges_part(he, he_param):
+            return hedge_part(he, he_param, vertTable, heTable, faceTable)
+
         areas_part = vmap(mapped_areas_part)(jnp.arange(len(faceTable)), face_params)
         hedges_part = vmap(mapped_hedges_part)(jnp.arange(2, len(heTable)), he_params[2:])
         return (
@@ -73,7 +78,7 @@ def test_inverse_modeling_for_regressions() -> None:
     face_params = jnp.asarray(mu_areas + std_areas * jax.random.normal(key, shape=(n_cells,)))
 
     # Energy minimization (init cond equilibrium)
-    (vertTable, heTable, faceTable), energies = inner_opt(
+    (vertTable, heTable, faceTable), _ = inner_opt(
         vertTable,
         heTable,
         faceTable,
@@ -103,7 +108,7 @@ def test_inverse_modeling_for_regressions() -> None:
     face_params_target = jnp.asarray(mu_areas + std_areas * jax.random.normal(key, shape=(n_cells,)))
 
     # Energy minimization (target equilibrium)
-    (vertTable_target, heTable_target, faceTable_target), energies_target = inner_opt(
+    (vertTable_target, heTable_target, faceTable_target), _ = inner_opt(
         vertTable_target,
         heTable_target,
         faceTable_target,
@@ -121,54 +126,33 @@ def test_inverse_modeling_for_regressions() -> None:
         selected_faces=None,
     )
 
-    # # Plotting
-    # plot_mesh(
-    #     vertTable,
-    #     heTable,
-    #     faceTable,
-    #     L_box=L_box,
-    #     multicolor=True,
-    #     lines=True,
-    #     vertices=False,
-    #     path="./",
-    #     name="energy_minimization",
-    #     show=False,
-    #     save=False,
-    # )
-    # plot_mesh(
-    #     vertTable_target,
-    #     heTable_target,
-    #     faceTable_target,
-    #     L_box=L_box,
-    #     multicolor=True,
-    #     lines=True,
-    #     vertices=False,
-    #     path="./",
-    #     name="energy_minimization_target",
-    #     show=False,
-    #     save=True,
-    # )
-
     # Areas target are the actual target ones at equilibrium (and remain fixed during BO)
-    mapped_fixed_areas_target = lambda face: get_area(face, vertTable_target, heTable_target, faceTable)
+    def mapped_fixed_areas_target(face):
+        return get_area(face, vertTable_target, heTable_target, faceTable)
+
     fixed_areas_target = vmap(mapped_fixed_areas_target)(jnp.arange(len(faceTable)))
 
     # Redefined energy function (with fixed areas and fixed first tension equal to the target ones)
     @jit
-    def area_part(face, vertTable, heTable, faceTable):
+    def area_part_v2(face, vertTable, heTable, faceTable):
         a = get_area(face, vertTable, heTable, faceTable)
         return (a - fixed_areas_target[face]) ** 2
 
     @jit
-    def hedge_part(he, he_param, vertTable, heTable, faceTable):
-        l = get_length(he, vertTable, heTable, faceTable)
-        return he_param * l
+    def hedge_part_v2(he, he_param, vertTable, heTable, faceTable):
+        edge_lengths = get_length(he, vertTable, heTable, faceTable)
+        return he_param * edge_lengths
 
     @jit
-    def energy(vertTable, heTable, faceTable, vert_params, he_params, face_params):
+    def energy_v2(vertTable, heTable, faceTable, vert_params, he_params, face_params):
         K_areas = 20
-        mapped_areas_part = lambda face: area_part(face, vertTable, heTable, faceTable)
-        mapped_hedges_part = lambda he, he_param: hedge_part(he, he_param, vertTable, heTable, faceTable)
+
+        def mapped_areas_part(face):
+            return area_part_v2(face, vertTable, heTable, faceTable)
+
+        def mapped_hedges_part(he, he_param):
+            return hedge_part_v2(he, he_param, vertTable, heTable, faceTable)
+
         areas_part = vmap(mapped_areas_part)(jnp.arange(len(faceTable)))
         hedges_part = vmap(mapped_hedges_part)(jnp.arange(2, len(heTable)), he_params[2:])
         return (
@@ -200,7 +184,7 @@ def test_inverse_modeling_for_regressions() -> None:
             )
         )
 
-        (vertTable, heTable, faceTable, vert_params, he_params, face_params), cost = bilevel_opt(
+        (vertTable, heTable, faceTable, vert_params, he_params, face_params), _ = bilevel_opt(
             vertTable,
             heTable,
             faceTable,
@@ -210,7 +194,7 @@ def test_inverse_modeling_for_regressions() -> None:
             vertTable_target,
             heTable_target,
             faceTable_target,
-            L_in=energy,
+            L_in=energy_v2,
             L_out=cost_v2v,
             solver_inner=sgd,
             solver_outer=adam,
@@ -223,16 +207,8 @@ def test_inverse_modeling_for_regressions() -> None:
             selected_faces=None,
             image_target=None,
             beta=None,
-            method="ad",  # change to 'ep', 'id', 'as'
+            method=BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION,  # change to EP, ID, AS
         )
-
-        # if j % 100 == 0:
-        #     # Plotting/saving
-        #     plot_mesh(
-        #     vertTable, heTable, faceTable,
-        #     L_box, multicolor=True, lines=True, vertices=False,
-        #     path='./', name='bilevel_result_'+str(j), show=False, save=True
-        #     )
 
     t_end = perf_counter()
     elapsed_times = t_end - t_start

@@ -5,7 +5,7 @@ from enum import Enum
 import jax
 import jax.numpy as jnp
 import optax
-from jax import grad, jacfwd, jit, lax
+from jax import grad, jacfwd, jit, lax, Array
 
 from vertax.geo import update_pbc
 from vertax.topo import update_T1
@@ -891,6 +891,15 @@ def outer_adjoint_state(
 #############
 
 
+class BilevelOptimizationMethod(Enum):
+    """Which optimization method to use in the bi-level optimization."""
+
+    AUTOMATIC_DIFFERENTIATION = "ad"
+    EQUILIBRIUM_PROPAGATION = "ep"
+    IMPLICIT_DIFFERENTIATION = "id"
+    ADJOINT_STATE = "as"
+
+
 def bilevel_opt(
     vertTable,
     heTable,
@@ -914,185 +923,189 @@ def bilevel_opt(
     selected_faces,
     image_target=None,
     beta=None,
-    method="ad",
+    method: BilevelOptimizationMethod = BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION,
 ):
-    if method == "ad":
-        vert_params, he_params, face_params = outer_opt(
-            vertTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            vertTable_target,
-            heTable_target,
-            faceTable_target,
-            L_in,
-            L_out,
-            solver_inner,
-            solver_outer,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-            image_target,
-        )
+    match method:
+        case BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION:
+            vert_params, he_params, face_params = outer_opt(
+                vertTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                vertTable_target,
+                heTable_target,
+                faceTable_target,
+                L_in,
+                L_out,
+                solver_inner,
+                solver_outer,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+                image_target,
+            )
 
-        (vertTable, heTable, faceTable), cost = inner_opt(
-            vertTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            L_in,
-            solver_inner,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-        )
+            (vertTable, heTable, faceTable), cost = inner_opt(
+                vertTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                L_in,
+                solver_inner,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+            )
 
-    elif method == "ep":
-        vert_params, he_params, face_params = outer_eq_prop(
-            vertTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            vertTable_target,
-            heTable_target,
-            faceTable_target,
-            L_in,
-            L_out,
-            solver_inner,
-            solver_outer,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-            image_target,
-            beta,
-        )
+        case BilevelOptimizationMethod.EQUILIBRIUM_PROPAGATION:
+            vert_params, he_params, face_params = outer_eq_prop(
+                vertTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                vertTable_target,
+                heTable_target,
+                faceTable_target,
+                L_in,
+                L_out,
+                solver_inner,
+                solver_outer,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+                image_target,
+                beta,
+            )
 
-        (vertTable, heTable, faceTable), cost = forward(
-            vertTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            vertTable_target,
-            heTable_target,
-            faceTable_target,
-            L_in,
-            L_out,
-            solver_inner,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-            image_target,
-            beta=0.0,
-        )
+            (vertTable, heTable, faceTable), cost = forward(
+                vertTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                vertTable_target,
+                heTable_target,
+                faceTable_target,
+                L_in,
+                L_out,
+                solver_inner,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+                image_target,
+                beta=0.0,
+            )
 
-    elif method == "id":
-        vert_params, he_params, face_params = outer_implicit(
-            vertTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            vertTable_target,
-            heTable_target,
-            faceTable_target,
-            L_in,
-            L_out,
-            solver_inner,
-            solver_outer,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-            image_target,
-        )
+        case BilevelOptimizationMethod.IMPLICIT_DIFFERENTIATION:
+            vert_params, he_params, face_params = outer_implicit(
+                vertTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                vertTable_target,
+                heTable_target,
+                faceTable_target,
+                L_in,
+                L_out,
+                solver_inner,
+                solver_outer,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+                image_target,
+            )
 
-        (vertTable, heTable, faceTable), cost = inner_opt(
-            vertTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            L_in,
-            solver_inner,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-        )
+            (vertTable, heTable, faceTable), cost = inner_opt(
+                vertTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                L_in,
+                solver_inner,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+            )
 
-    elif method == "as":
-        vert_params, he_params, face_params = outer_adjoint_state(
-            vertTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            vertTable_target,
-            heTable_target,
-            faceTable_target,
-            L_in,
-            L_out,
-            solver_inner,
-            solver_outer,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-            image_target,
-        )
+        case BilevelOptimizationMethod.ADJOINT_STATE:
+            vert_params, he_params, face_params = outer_adjoint_state(
+                vertTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                vertTable_target,
+                heTable_target,
+                faceTable_target,
+                L_in,
+                L_out,
+                solver_inner,
+                solver_outer,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+                image_target,
+            )
 
-        (vertTable, heTable, faceTable), cost = inner_opt(
-            vertTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            L_in,
-            solver_inner,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-        )
+            (vertTable, heTable, faceTable), cost = inner_opt(
+                vertTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                L_in,
+                solver_inner,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+            )
 
+        case _:
+            msg = f"Method not recognized. Must be a BilevelOptimizationMethod. Got {method}."
+            raise ValueError(msg)
     return (vertTable, heTable, faceTable, vert_params, he_params, face_params), cost
