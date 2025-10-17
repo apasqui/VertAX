@@ -1,17 +1,127 @@
+[build-system]
+    requires      = ["hatchling"]
+    build-backend = "hatchling.build"
+
 [project]
-name = "vertax"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.13"
-dependencies = [
-    "cellpose==3.1.0",
-    "jaxlib==0.4.34",
-    "jaxopt==0.8.3",
-    "matplotlib==3.8.0",
-    "numpy==1.26.4",
-    "optax==0.2.4",
-    "scikit-image==0.24.0",
-    "scipy>=1.16.2",
-    "tifffile==2024.12.12",
-]
+    name = "vertax"
+    version = "0.1.0"
+    license = { file = "LICENSE" }
+    description = "Optimization of vertex models."
+    authors = [{ name = "Alessandro Pasqui", email = "alessandro.pasqui@college-de-france.fr" }]
+    readme = "README.md"
+    requires-python = ">=3.13"
+    dependencies = [
+        "cellpose==3.1.0",
+        "jaxlib==0.4.34",
+        "jaxopt==0.8.3",
+        "matplotlib==3.8.0",
+        "numpy==1.26.4",
+        "optax==0.2.4",
+        "scikit-image==0.24.0",
+        "scipy>=1.16.2",
+        "tifffile==2024.12.12",
+    ]
+
+    classifiers = [
+        "Development Status :: 1 - Planning",
+        "Intended Audience :: Science/Research",
+        "Operating System :: MacOS",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3 :: Only",
+        "Programming Language :: Python :: 3.13",
+        "Topic :: Scientific/Engineering",
+    ] # list of valid classifiers: https://pypi.org/classifiers/
+    #  At least put:
+    #  - which version(s) of Python your package works on,
+    #  - which operating systems your package will work on.
+    #  - which license your package is available under,
+
+    [project.urls]
+        Homepage      = "https://gitlab.college-de-france.fr/virtualembryo/vertax"
+        "Bug Tracker" = "https://gitlab.college-de-france.fr/virtualembryo/vertax/issues"
+        Discussions   = "https://gitlab.college-de-france.fr/virtualembryo/vertax/discussions"
+        Changelog     = "https://gitlab.college-de-france.fr/virtualembryo/vertax/releases"
+
+[tool.ruff]
+    line-length = 120
+
+    # Exclude a variety of commonly ignored directories.
+    exclude = [
+        ".bzr",
+        ".direnv",
+        ".eggs",
+        ".git",
+        ".git-rewrite",
+        ".hg",
+        ".mypy_cache",
+        ".nox",
+        ".pants.d",
+        ".pytype",
+        ".ruff_cache",
+        ".svn",
+        ".tox",
+        ".venv",
+        "__pypackages__",
+        "_build",
+        "buck-out",
+        "build",
+        "dist",
+        "node_modules",
+        "venv",
+        "*.pyi",
+    ]
+
+    [tool.ruff.lint]
+        # Enable the pycodestyle (`E`) and Pyflakes (`F`) rules by default.
+        # Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
+        # McCabe complexity (`C901`) by default.
+        select = [
+            "E",
+            "F",
+            "W",
+            "C90",
+            "I",
+            "N",
+            "D",
+            "UP",
+            "ANN",
+            "S",
+            "B",
+            "A",
+            "COM",
+            # "CPY",
+            "C4",
+            "EM",
+            "EXE",
+            "FA",
+            "ISC",
+            # "INP",
+            "PT",
+            "Q",
+            "SIM",
+            "ARG",
+            "PTH",
+            "NPY",
+            "PERF",
+            "RUF",
+        ]
+        ignore = ["S101", "N816", "N803", "N806", "COM812"]
+
+        # Allow fix for all enabled rules (when `--fix`) is provided.
+        fixable   = ["ALL"]
+        unfixable = []
+
+
+        per-file-ignores = {}
+
+
+        [tool.ruff.lint.pydocstyle]
+            convention = "google"
+
+[tool.mypy]
+    strict                 = true
+    warn_unreachable       = true
+    ignore_missing_imports = true
+    enable_error_code      = ["ignore-without-code", "redundant-expr", "truthy-bool"]

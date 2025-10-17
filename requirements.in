@@ -1,0 +1,10 @@
+jax
+jaxlib
+jaxopt
+optax
+numpy
+scipy
+scikit-image
+matplotlib
+tifffile
+cellpose
