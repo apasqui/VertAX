@@ -393,7 +393,7 @@ def create_mesh_from_image(image: NDArray, path: str = "./") -> tuple[Array, Arr
             if len(label_junctions) > 2:
                 faces.append(label_junctions)
 
-        return three_junctions, edges, faces
+        return np.array(three_junctions), edges, faces
 
     image_shape = image.shape
     L_box = image_shape[0]
@@ -552,7 +552,7 @@ def create_mesh_from_image(image: NDArray, path: str = "./") -> tuple[Array, Arr
                 start_edge = (e[1], e[0])
                 visited.append(e)
             i += 1
-            e = edges_face[i % len(face)]
+            e = edges_face[i % len(edges_face)]
         order = 0
         sum0_offsets = 0
         sum1_offsets = 0

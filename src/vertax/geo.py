@@ -1,15 +1,15 @@
+"""Geometric functions over a 2D mesh."""
+
 from functools import partial
 
 import jax
 import jax.numpy as jnp
-from jax import jacfwd, jit, vmap
+from jax import jacfwd, jit, vmap, Array
 from jax.lax import while_loop
-
-import vertax
 
 
 @partial(jit, static_argnums=(3,))
-def sum_edges(face, heTable: jnp.array, faceTable: jnp.array, fun):
+def sum_edges(face, heTable: Array, faceTable: Array, fun):
     start_he = faceTable.at[face].get()
     he = start_he
     res = fun(he, jnp.array([0.0, 0.0, 0.0]))
@@ -32,7 +32,7 @@ def sum_edges(face, heTable: jnp.array, faceTable: jnp.array, fun):
 
 
 @jit
-def get_length(he, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+def get_length(he, vertTable: Array, heTable: Array, faceTable: Array):
     L_box = jnp.sqrt(len(faceTable))
     v_source = heTable.at[he, 3].get()
     v_target = heTable.at[he, 4].get()
@@ -47,7 +47,7 @@ def get_length(he, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.arra
 
 
 @jit
-def get_length_with_offset(he, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+def get_length_with_offset(he, vertTable: Array, heTable: Array, faceTable: Array):
     L_box = jnp.sqrt(len(faceTable))
     v_source = heTable.at[he, 3].get()
     v_target = heTable.at[he, 4].get()
@@ -62,7 +62,7 @@ def get_length_with_offset(he, vertTable: jnp.array, heTable: jnp.array, faceTab
 
 
 @jit
-def get_perimeter(face, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+def get_perimeter(face, vertTable: Array, heTable: Array, faceTable: Array):
     def fun(he, res):
         return get_length_with_offset(he, vertTable, heTable, faceTable)
 
@@ -70,7 +70,7 @@ def get_perimeter(face, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp
 
 
 @jit
-def compute_numerator(he, res, vertTable: jnp.array, heTable: jnp.array, L_box: float):
+def compute_numerator(he, res, vertTable: Array, heTable: Array, L_box: float):
     x_offset, y_offset = res.at[1].get(), res.at[2].get()
     v_source = heTable.at[he, 3].get()
     v_target = heTable.at[he, 4].get()
@@ -86,7 +86,7 @@ def compute_numerator(he, res, vertTable: jnp.array, heTable: jnp.array, L_box: 
 
 # computing area for a face using  ## shoelace formula ##
 @jit
-def get_area(face, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+def get_area(face, vertTable: Array, heTable: Array, faceTable: Array):
     def fun(he, res):
         return compute_numerator(he, res, vertTable, heTable, jnp.sqrt(len(faceTable)))
 
@@ -94,7 +94,7 @@ def get_area(face, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.arra
 
 
 # select verts, hes, faces for faces with all verts inside L_box_inner
-def select_verts_hes_faces(vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array, L_box_inner: float):
+def select_verts_hes_faces(vertTable: Array, heTable: Array, faceTable: Array, L_box_inner: float):
     L_box = jnp.sqrt(len(faceTable))
 
     selected_faces = []
@@ -189,7 +189,7 @@ def select_verts_hes_faces_rectangle(vertTable, heTable, faceTable, L_bottom, L_
 # (only for id implementation)
 # listing vertices of a face
 @jit
-def get_vertices_id(face, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+def get_vertices_id(face, vertTable: Array, heTable: Array, faceTable: Array):
     n_cells = len(faceTable)
     L_box = jnp.sqrt(n_cells)
 
@@ -233,7 +233,7 @@ def get_vertices_id(face, vertTable: jnp.array, heTable: jnp.array, faceTable: j
 # (only for id implementation)
 # computing area for a face using  ## shoelace formula ##
 @jit
-def get_area_id(face, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+def get_area_id(face, vertTable: Array, heTable: Array, faceTable: Array):
     vertices = get_vertices_id(face, vertTable, heTable, faceTable)
 
     numerator = 0.0
@@ -249,7 +249,7 @@ def get_area_id(face, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.a
 
 
 @jit
-def get_perimeter_area(face, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+def get_perimeter_area(face, vertTable: Array, heTable: Array, faceTable: Array):
     perimeter = get_perimeter(face, vertTable, heTable, faceTable)
     area = get_area(face, vertTable, heTable, faceTable)
 
@@ -257,7 +257,7 @@ def get_perimeter_area(face, vertTable: jnp.array, heTable: jnp.array, faceTable
 
 
 @jit
-def get_mean_shape_factor(vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+def get_mean_shape_factor(vertTable: Array, heTable: Array, faceTable: Array):
     num_faces = len(faceTable)
     faces = jnp.arange(num_faces)
     mapped_fn = lambda face: get_perimeter(face, vertTable, heTable, faceTable)
@@ -267,7 +267,7 @@ def get_mean_shape_factor(vertTable: jnp.array, heTable: jnp.array, faceTable: j
 
 
 @jit
-def update_he(he, vertTable: jnp.array, heTable: jnp.array, L_box: float):
+def update_he(he, vertTable: Array, heTable: Array, L_box: float):
     v_idx_target = heTable.at[he, 4].get()
     v_x = vertTable.at[v_idx_target, 0].get()
     v_y = vertTable.at[v_idx_target, 1].get()
@@ -284,7 +284,7 @@ def update_he(he, vertTable: jnp.array, heTable: jnp.array, L_box: float):
 
 
 @jit
-def move_vertex_inside(v: jnp.array, vertTable: jnp.array, L_box: float):
+def move_vertex_inside(v: Array, vertTable: Array, L_box: float):
     v_x = vertTable.at[v, 0].get()
     v_y = vertTable.at[v, 1].get()
     v_x = jnp.where(v_x < 0.0, v_x + L_box, jnp.where(v_x > L_box, v_x - L_box, v_x))
@@ -295,7 +295,7 @@ def move_vertex_inside(v: jnp.array, vertTable: jnp.array, L_box: float):
 
 # updating vertices positions and offsets for periodic boundary conditions
 @jit
-def update_pbc(vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+def update_pbc(vertTable: Array, heTable: Array, faceTable: Array):
     n_cells = len(faceTable)
     L_box = jnp.sqrt(n_cells)
 
@@ -375,8 +375,9 @@ def get_shear_modulus(
         vertTable_shear, heTable_shear, faceTable_shear, unmoved_verts = lee_edwards_pbc(
             vertTable, heTable, faceTable, gamma, L_bottom, L_top
         )
+        from vertax.opt import inner_opt
 
-        (vertTable_new, heTable_new, faceTable_new), _ = vertax.inner_optax(
+        (vertTable_new, heTable_new, faceTable_new), _ = inner_opt(
             vertTable_shear,
             heTable_shear,
             faceTable_shear,
