@@ -309,6 +309,8 @@ def cost_areas(
     vertTable: Array,
     heTable: Array,
     faceTable: Array,
+    width: float,
+    height: float,
     selected_verts,
     selected_hes,
     selected_faces,
@@ -317,12 +319,12 @@ def cost_areas(
     faceTable_target,
     image_target,
 ):
-    mapped_fn = (
-        lambda f: (
-            get_area(f, vertTable, heTable, faceTable) - get_area(f, vertTable_target, heTable_target, faceTable_target)
-        )
-        ** 2
-    )  # + \
+    def mapped_fn(f):
+        return (
+            get_area(f, vertTable, heTable, faceTable, width, height)
+            - get_area(f, vertTable_target, heTable_target, faceTable_target, width, height)
+        ) ** 2  # + \
+
     # (get_perimeter(f, vertTable, heTable, faceTable) - get_perimeter(f, vertTable_target, heTable_target, faceTable_target))**2
     difference = vmap(mapped_fn)(selected_faces)
     return (1.0 / len(difference)) * jnp.sum(difference)

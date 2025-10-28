@@ -37,8 +37,8 @@ def test_inverse_modeling_for_regressions() -> None:
 
     # Energy function
     @jit
-    def area_part(face, face_param, vertTable, heTable, faceTable):
-        a = get_area(face, vertTable, heTable, faceTable)
+    def area_part(face, face_param, vertTable, heTable, faceTable, width: float, height: float):
+        a = get_area(face, vertTable, heTable, faceTable, width, height)
         return (a - face_param) ** 2
 
     @jit
@@ -51,7 +51,7 @@ def test_inverse_modeling_for_regressions() -> None:
         K_areas = 20
 
         def mapped_areas_part(face, face_param):
-            return area_part(face, face_param, vertTable, heTable, faceTable)
+            return area_part(face, face_param, vertTable, heTable, faceTable, width, height)
 
         def mapped_hedges_part(he, he_param):
             return hedge_part(he, he_param, vertTable, heTable, faceTable, width, height)
@@ -135,14 +135,14 @@ def test_inverse_modeling_for_regressions() -> None:
 
     # Areas target are the actual target ones at equilibrium (and remain fixed during BO)
     def mapped_fixed_areas_target(face):
-        return get_area(face, vertTable_target, heTable_target, faceTable)
+        return get_area(face, vertTable_target, heTable_target, faceTable, width, height)
 
     fixed_areas_target = vmap(mapped_fixed_areas_target)(jnp.arange(len(faceTable)))
 
     # Redefined energy function (with fixed areas and fixed first tension equal to the target ones)
     @jit
-    def area_part_v2(face, vertTable, heTable, faceTable):
-        a = get_area(face, vertTable, heTable, faceTable)
+    def area_part_v2(face, vertTable, heTable, faceTable, width, height):
+        a = get_area(face, vertTable, heTable, faceTable, width, height)
         return (a - fixed_areas_target[face]) ** 2
 
     @jit
@@ -155,7 +155,7 @@ def test_inverse_modeling_for_regressions() -> None:
         K_areas = 20
 
         def mapped_areas_part(face):
-            return area_part_v2(face, vertTable, heTable, faceTable)
+            return area_part_v2(face, vertTable, heTable, faceTable, width, height)
 
         def mapped_hedges_part(he, he_param):
             return hedge_part_v2(he, he_param, vertTable, heTable, faceTable, width, height)

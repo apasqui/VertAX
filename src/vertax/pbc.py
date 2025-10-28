@@ -41,7 +41,7 @@ class PBCMesh(Mesh):
     def get_area(self, face_id: int) -> float:
         """Get the area of a face."""
         return float(
-            get_area(face_id, self.vertices, self.edges, self.faces)
+            get_area(face_id, self.vertices, self.edges, self.faces, self.width, self.height)
         )  # if bug maybe remove the conversion to a float.
 
     def update_boundary_conditions(self) -> None:

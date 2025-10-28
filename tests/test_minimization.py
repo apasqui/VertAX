@@ -32,7 +32,7 @@ def test_minimization_for_regressions() -> None:
     # Energy function
     @jit
     def cell_energy(face, face_param, vertTable, heTable, faceTable, width, height):
-        area = get_area(face, vertTable, heTable, faceTable)
+        area = get_area(face, vertTable, heTable, faceTable, width, height)
         perimeter = get_perimeter(face, vertTable, heTable, faceTable, width, height)
         return ((area - 1) ** 2) + ((perimeter - face_param) ** 2)
 

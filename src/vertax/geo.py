@@ -70,14 +70,14 @@ def get_perimeter(face, vertTable: Array, heTable: Array, faceTable: Array, widt
 
 
 @jit
-def compute_numerator(he, res, vertTable: Array, heTable: Array, L_box: float):
+def compute_numerator(he, res, vertTable: Array, heTable: Array, width: float, height: float):
     x_offset, y_offset = res.at[1].get(), res.at[2].get()
     v_source = heTable.at[he, 3].get()
     v_target = heTable.at[he, 4].get()
     x0 = vertTable.at[v_source, 0].get() + x_offset  # source
     y0 = vertTable.at[v_source, 1].get() + y_offset
-    he_offset_x1 = heTable.at[he, 6].get() * L_box  # offset target
-    he_offset_y1 = heTable.at[he, 7].get() * L_box
+    he_offset_x1 = heTable.at[he, 6].get() * width  # offset target
+    he_offset_y1 = heTable.at[he, 7].get() * height
     x1 = vertTable.at[v_target, 0].get() + x_offset + he_offset_x1  # target
     y1 = vertTable.at[v_target, 1].get() + y_offset + he_offset_y1
 
@@ -86,9 +86,9 @@ def compute_numerator(he, res, vertTable: Array, heTable: Array, L_box: float):
 
 # computing area for a face using  ## shoelace formula ##
 @jit
-def get_area(face, vertTable: Array, heTable: Array, faceTable: Array):
+def get_area(face, vertTable: Array, heTable: Array, faceTable: Array, width: float, height: float):
     def fun(he, res):
-        return compute_numerator(he, res, vertTable, heTable, jnp.sqrt(len(faceTable)))
+        return compute_numerator(he, res, vertTable, heTable, width, height)
 
     return 0.5 * jnp.abs(sum_edges(face, heTable, faceTable, fun)[0])
 
@@ -251,7 +251,7 @@ def get_area_id(face, vertTable: Array, heTable: Array, faceTable: Array):
 @jit
 def get_perimeter_area(face, vertTable: Array, heTable: Array, faceTable: Array, width: float, height: float):
     perimeter = get_perimeter(face, vertTable, heTable, faceTable, width, height)
-    area = get_area(face, vertTable, heTable, faceTable)
+    area = get_area(face, vertTable, heTable, faceTable, width, height)
 
     return perimeter, area
 
