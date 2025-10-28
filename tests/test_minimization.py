@@ -81,7 +81,7 @@ def test_minimization_for_regressions() -> None:
 
     ref_vertices, ref_edges, ref_faces = load_mesh("tests/reference_result_test_minimization.npz")
 
-    assert_allclose(vertTable_eq, ref_vertices, rtol=0.001)
+    assert_allclose(vertTable_eq, ref_vertices[:, :-1], rtol=0.001)
     assert_allclose(heTable_eq, ref_edges, rtol=0.001)
     assert_allclose(faceTable_eq, ref_faces, rtol=0.001)
 

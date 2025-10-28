@@ -269,7 +269,7 @@ def create_mesh_from_seeds(seeds: Array) -> tuple[Array, Array, Array]:  # noqa:
 
     # VERT FACE HE TABLES
 
-    vertTable = np.zeros((len(periodic_voronoi_vertices_idx), 3))
+    vertTable = np.zeros((len(periodic_voronoi_vertices_idx), 2))
     for i, (_, pos) in enumerate(zip(periodic_voronoi_vertices_idx, periodic_voronoi_vertices_pos, strict=False)):
         vertTable[i][0] = pos[0]  # x pos vert
         vertTable[i][1] = pos[1]  # y pos vert

@@ -15,7 +15,8 @@ def plot_mesh(
     vertTable,
     heTable,
     faceTable,
-    L_box,
+    width: float,
+    height: float,
     flip_x=False,
     flip_y=False,
     multicolor=True,
@@ -27,16 +28,14 @@ def plot_mesh(
     show=True,
 ):
     cmap = get_cmap(len(faceTable))
-
     all_verts = []
     for face in range(len(faceTable)):
         start_he = faceTable[face]
         he = start_he
 
         v_source = heTable[he][3]
-
-        verts_sources = np.array([vertTable[v_source][:-1]])
-        all_verts.append(vertTable[v_source][:-1])
+        verts_sources = np.array([vertTable[v_source]])
+        all_verts.append(vertTable[v_source])
 
         he_offset_x = heTable[he][6]
         he_offset_y = heTable[he][7]
@@ -48,12 +47,12 @@ def plot_mesh(
         while he != start_he:
             v_source = heTable[he][3]
 
-            all_verts.append(vertTable[v_source][:-1])
+            all_verts.append(vertTable[v_source])
 
             verts_sources = np.concatenate(
                 (
                     verts_sources,
-                    (np.array([vertTable[v_source][:-1]]) + np.array([sum0_offsets * L_box, sum1_offsets * L_box])),
+                    (np.array([vertTable[v_source]]) + np.array([sum0_offsets * width, sum1_offsets * height])),
                 ),
                 axis=0,
             )
@@ -66,66 +65,65 @@ def plot_mesh(
             he = heTable[he][1]
 
         v_source = heTable[he][3]
-        verts_sources = np.concatenate((verts_sources, (np.array([vertTable[v_source][:-1]]))), axis=0)
-
-        y, x = zip(*verts_sources, strict=False)
+        verts_sources = np.concatenate((verts_sources, (np.array([vertTable[v_source]]))), axis=0)
+        x, y = zip(*verts_sources, strict=False)
 
         if flip_x:
-            x = tuple(np.array((L_box,) * len(x)) - x)
+            x = tuple(np.array((width,) * len(x)) - x)
         if flip_y:
-            y = tuple(np.array((L_box,) * len(y)) - y)
+            y = tuple(np.array((height,) * len(y)) - y)
 
         if multicolor:
             plt.fill(x, y, color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, L_box), np.add(y, L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, -L_box), np.add(y, -L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, -L_box), np.add(y, L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, L_box), np.add(y, -L_box), color=cmap(face), alpha=0.5)
-            plt.fill(x, np.add(y, L_box), color=cmap(face), alpha=0.5)
-            plt.fill(x, np.add(y, -L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, L_box), y, color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, -L_box), y, color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(x, np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(x, np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), y, color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), y, color=cmap(face), alpha=0.5)
 
         if lines:
             for i in range(0, len(x) - 1, 1):
                 plt.plot(x[i : i + 2], y[i : i + 2], "-", color="black")
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (L_box, L_box))),
-                    tuple(np.add(y[i : i + 2], (L_box, L_box))),
+                    tuple(np.add(x[i : i + 2], (width, width))),
+                    tuple(np.add(y[i : i + 2], (height, height))),
                     "-",
                     color="black",
                 )
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (-L_box, -L_box))),
-                    tuple(np.add(y[i : i + 2], (-L_box, -L_box))),
+                    tuple(np.add(x[i : i + 2], (-width, -width))),
+                    tuple(np.add(y[i : i + 2], (-height, -height))),
                     "-",
                     color="black",
                 )
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (-L_box, -L_box))),
-                    tuple(np.add(y[i : i + 2], (L_box, L_box))),
+                    tuple(np.add(x[i : i + 2], (-width, -width))),
+                    tuple(np.add(y[i : i + 2], (height, height))),
                     "-",
                     color="black",
                 )
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (L_box, L_box))),
-                    tuple(np.add(y[i : i + 2], (-L_box, -L_box))),
+                    tuple(np.add(x[i : i + 2], (width, width))),
+                    tuple(np.add(y[i : i + 2], (-height, -height))),
                     "-",
                     color="black",
                 )
-                plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (L_box, L_box))), "-", color="black")
-                plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (-L_box, -L_box))), "-", color="black")
-                plt.plot(tuple(np.add(x[i : i + 2], (L_box, L_box))), y[i : i + 2], "-", color="black")
-                plt.plot(tuple(np.add(x[i : i + 2], (-L_box, -L_box))), y[i : i + 2], "-", color="black")
+                plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (height, height))), "-", color="black")
+                plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (-height, -height))), "-", color="black")
+                plt.plot(tuple(np.add(x[i : i + 2], (width, width))), y[i : i + 2], "-", color="black")
+                plt.plot(tuple(np.add(x[i : i + 2], (-width, -width))), y[i : i + 2], "-", color="black")
 
     if vertices:
         x_all, y_all = zip(*all_verts, strict=False)
         plt.scatter(x_all, y_all, color="black")
 
-    plt.xlim([0, L_box])
-    plt.ylim([0, L_box])
+    plt.xlim([0, width])
+    plt.ylim([0, height])
 
-    plt.gca().set_aspect("equal")
+    # plt.gca().set_aspect("equal")
 
     if save:
         os.makedirs(path, exist_ok=True)
@@ -145,7 +143,8 @@ def plot_mesh_selected(
     selected_verts,
     selected_hes,
     selected_faces,
-    L_box,
+    width: float,
+    height: float,
     flip_x=False,
     flip_y=False,
     multicolor=True,
@@ -167,8 +166,8 @@ def plot_mesh_selected(
 
         v_source = heTable[he][3]
 
-        verts_sources = np.array([vertTable[v_source][:-1]])
-        all_verts.append(vertTable[v_source][:-1])
+        verts_sources = np.array([vertTable[v_source]])
+        all_verts.append(vertTable[v_source])
 
         he_offset_x = heTable[he][6]
         he_offset_y = heTable[he][7]
@@ -180,12 +179,12 @@ def plot_mesh_selected(
         while he != start_he:
             v_source = heTable[he][3]
 
-            all_verts.append(vertTable[v_source][:-1])
+            all_verts.append(vertTable[v_source])
 
             verts_sources = np.concatenate(
                 (
                     verts_sources,
-                    (np.array([vertTable[v_source][:-1]]) + np.array([sum0_offsets * L_box, sum1_offsets * L_box])),
+                    (np.array([vertTable[v_source]]) + np.array([sum0_offsets * width, sum1_offsets * height])),
                 ),
                 axis=0,
             )
@@ -198,64 +197,64 @@ def plot_mesh_selected(
             he = heTable[he][1]
 
         v_source = heTable[he][3]
-        verts_sources = np.concatenate((verts_sources, (np.array([vertTable[v_source][:-1]]))), axis=0)
+        verts_sources = np.concatenate((verts_sources, (np.array([vertTable[v_source]]))), axis=0)
 
-        y, x = zip(*verts_sources, strict=False)
+        x, y = zip(*verts_sources, strict=False)
 
         if flip_x:
-            x = tuple(np.array((L_box,) * len(x)) - x)
+            x = tuple(np.array((width,) * len(x)) - x)
         if flip_y:
-            y = tuple(np.array((L_box,) * len(y)) - y)
+            y = tuple(np.array((height,) * len(y)) - y)
 
         if multicolor:
             plt.fill(x, y, color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, L_box), np.add(y, L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, -L_box), np.add(y, -L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, -L_box), np.add(y, L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, L_box), np.add(y, -L_box), color=cmap(face), alpha=0.5)
-            plt.fill(x, np.add(y, L_box), color=cmap(face), alpha=0.5)
-            plt.fill(x, np.add(y, -L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, L_box), y, color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, -L_box), y, color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(x, np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(x, np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), y, color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), y, color=cmap(face), alpha=0.5)
 
         if lines:
             for i in range(0, len(x) - 1, 1):
                 plt.plot(x[i : i + 2], y[i : i + 2], "-", color="black")
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (L_box, L_box))),
-                    tuple(np.add(y[i : i + 2], (L_box, L_box))),
+                    tuple(np.add(x[i : i + 2], (width, width))),
+                    tuple(np.add(y[i : i + 2], (height, height))),
                     "-",
                     color="black",
                 )
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (-L_box, -L_box))),
-                    tuple(np.add(y[i : i + 2], (-L_box, -L_box))),
+                    tuple(np.add(x[i : i + 2], (-width, -width))),
+                    tuple(np.add(y[i : i + 2], (-height, -height))),
                     "-",
                     color="black",
                 )
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (-L_box, -L_box))),
-                    tuple(np.add(y[i : i + 2], (L_box, L_box))),
+                    tuple(np.add(x[i : i + 2], (-width, -width))),
+                    tuple(np.add(y[i : i + 2], (height, height))),
                     "-",
                     color="black",
                 )
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (L_box, L_box))),
-                    tuple(np.add(y[i : i + 2], (-L_box, -L_box))),
+                    tuple(np.add(x[i : i + 2], (width, width))),
+                    tuple(np.add(y[i : i + 2], (-height, -height))),
                     "-",
                     color="black",
                 )
-                plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (L_box, L_box))), "-", color="black")
-                plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (-L_box, -L_box))), "-", color="black")
-                plt.plot(tuple(np.add(x[i : i + 2], (L_box, L_box))), y[i : i + 2], "-", color="black")
-                plt.plot(tuple(np.add(x[i : i + 2], (-L_box, -L_box))), y[i : i + 2], "-", color="black")
+                plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (height, height))), "-", color="black")
+                plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (-height, -height))), "-", color="black")
+                plt.plot(tuple(np.add(x[i : i + 2], (width, width))), y[i : i + 2], "-", color="black")
+                plt.plot(tuple(np.add(x[i : i + 2], (-width, -width))), y[i : i + 2], "-", color="black")
 
     if vertices:
         x_all, y_all = zip(*all_verts, strict=False)
         plt.scatter(x_all, y_all, color="black")
 
-    plt.xlim([0, L_box])
-    plt.ylim([0, L_box])
+    plt.xlim([0, width])
+    plt.ylim([0, height])
 
     plt.gca().set_aspect("equal")
 
@@ -275,7 +274,8 @@ def plot_line_tens(
     heTable,
     faceTable,
     file_txt,
-    L_box,
+    width: float,
+    height: float,
     flip_x=False,
     flip_y=False,
     multicolor=False,
@@ -313,8 +313,8 @@ def plot_line_tens(
 
         v_source = heTable[he][3]
 
-        verts_sources = np.array([vertTable[v_source][:-1]])
-        all_verts.append(vertTable[v_source][:-1])
+        verts_sources = np.array([vertTable[v_source]])
+        all_verts.append(vertTable[v_source])
 
         he_offset_x = heTable[he][6]
         he_offset_y = heTable[he][7]
@@ -328,12 +328,12 @@ def plot_line_tens(
 
             v_source = heTable[he][3]
 
-            all_verts.append(vertTable[v_source][:-1])
+            all_verts.append(vertTable[v_source])
 
             verts_sources = np.concatenate(
                 (
                     verts_sources,
-                    (np.array([vertTable[v_source][:-1]]) + np.array([sum0_offsets * L_box, sum1_offsets * L_box])),
+                    (np.array([vertTable[v_source]]) + np.array([sum0_offsets * width, sum1_offsets * height])),
                 ),
                 axis=0,
             )
@@ -346,25 +346,25 @@ def plot_line_tens(
             he = heTable[he][1]
 
         v_source = heTable[he][3]
-        verts_sources = np.concatenate((verts_sources, (np.array([vertTable[v_source][:-1]]))), axis=0)
+        verts_sources = np.concatenate((verts_sources, (np.array([vertTable[v_source]]))), axis=0)
 
-        y, x = zip(*verts_sources, strict=False)
+        x, y = zip(*verts_sources, strict=False)
 
         if flip_x:
-            x = tuple(np.array((L_box,) * len(x)) - x)
+            x = tuple(np.array((width,) * len(x)) - x)
         if flip_y:
-            y = tuple(np.array((L_box,) * len(y)) - y)
+            y = tuple(np.array((height,) * len(y)) - y)
 
         if multicolor:
             plt.fill(x, y, color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, L_box), np.add(y, L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, -L_box), np.add(y, -L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, -L_box), np.add(y, L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, L_box), np.add(y, -L_box), color=cmap(face), alpha=0.5)
-            plt.fill(x, np.add(y, L_box), color=cmap(face), alpha=0.5)
-            plt.fill(x, np.add(y, -L_box), color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, L_box), y, color=cmap(face), alpha=0.5)
-            plt.fill(np.add(x, -L_box), y, color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(x, np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(x, np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), y, color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), y, color=cmap(face), alpha=0.5)
 
         if lines:
             for i in range(0, len(x) - 1, 1):
@@ -372,48 +372,50 @@ def plot_line_tens(
                 color = (r, 0, 0)  # (rosso, verde, blu)
                 plt.plot(x[i : i + 2], y[i : i + 2], "-", color=color, lw=0.5 + r * 3.0)
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (L_box, L_box))),
-                    tuple(np.add(y[i : i + 2], (L_box, L_box))),
+                    tuple(np.add(x[i : i + 2], (width, width))),
+                    tuple(np.add(y[i : i + 2], (height, height))),
                     "-",
                     color=color,
                     lw=0.5 + r * 3.0,
                 )
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (-L_box, -L_box))),
-                    tuple(np.add(y[i : i + 2], (-L_box, -L_box))),
+                    tuple(np.add(x[i : i + 2], (-width, -width))),
+                    tuple(np.add(y[i : i + 2], (-height, -height))),
                     "-",
                     color=color,
                     lw=0.5 + r * 3.0,
                 )
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (-L_box, -L_box))),
-                    tuple(np.add(y[i : i + 2], (L_box, L_box))),
+                    tuple(np.add(x[i : i + 2], (-width, -width))),
+                    tuple(np.add(y[i : i + 2], (height, height))),
                     "-",
                     color=color,
                     lw=0.5 + r * 3.0,
                 )
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (L_box, L_box))),
-                    tuple(np.add(y[i : i + 2], (-L_box, -L_box))),
+                    tuple(np.add(x[i : i + 2], (width, width))),
+                    tuple(np.add(y[i : i + 2], (-height, -height))),
                     "-",
                     color=color,
                     lw=0.5 + r * 3.0,
                 )
-                plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (L_box, L_box))), "-", color=color, lw=0.5 + r * 3.0)
                 plt.plot(
-                    x[i : i + 2], tuple(np.add(y[i : i + 2], (-L_box, -L_box))), "-", color=color, lw=0.5 + r * 3.0
+                    x[i : i + 2], tuple(np.add(y[i : i + 2], (height, height))), "-", color=color, lw=0.5 + r * 3.0
                 )
-                plt.plot(tuple(np.add(x[i : i + 2], (L_box, L_box))), y[i : i + 2], "-", color=color, lw=0.5 + r * 3.0)
                 plt.plot(
-                    tuple(np.add(x[i : i + 2], (-L_box, -L_box))), y[i : i + 2], "-", color=color, lw=0.5 + r * 3.0
+                    x[i : i + 2], tuple(np.add(y[i : i + 2], (-height, -height))), "-", color=color, lw=0.5 + r * 3.0
+                )
+                plt.plot(tuple(np.add(x[i : i + 2], (width, width))), y[i : i + 2], "-", color=color, lw=0.5 + r * 3.0)
+                plt.plot(
+                    tuple(np.add(x[i : i + 2], (-width, -width))), y[i : i + 2], "-", color=color, lw=0.5 + r * 3.0
                 )
 
     if vertices:
         x_all, y_all = zip(*all_verts, strict=False)
         plt.scatter(x_all, y_all, color="black")
 
-    plt.xlim([0, L_box])
-    plt.ylim([0, L_box])
+    plt.xlim([0, width])
+    plt.ylim([0, height])
 
     plt.gca().set_aspect("equal")
 

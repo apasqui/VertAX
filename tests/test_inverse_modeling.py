@@ -227,7 +227,7 @@ def test_inverse_modeling_for_regressions() -> None:
 
     ref_vertices, ref_edges, ref_faces = load_mesh("tests/reference_result_test_inverse_modeling.npz")
 
-    assert_allclose(vertTable, ref_vertices, rtol=0.001)
+    assert_allclose(vertTable, ref_vertices[:, :-1], rtol=0.001)
     assert_allclose(heTable, ref_edges, rtol=0.001)
     assert_allclose(faceTable, ref_faces, rtol=0.001)
 
