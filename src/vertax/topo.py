@@ -8,11 +8,13 @@ from jax import jit
 from vertax.geo import get_length, update_pbc
 
 
-@partial(jit, static_argnums=(6,))
+@partial(jit, static_argnums=(3, 4, 8))
 def update_T1(
     vertTable,
     heTable,
     faceTable,
+    width,
+    height,
     vert_params,
     he_params,
     face_params,
@@ -52,7 +54,7 @@ def update_T1(
         next_twin_next_he_idx = twin_next_he[1]
 
         # check distance
-        distance = get_length(he_idx, vertTable_new, heTable_new, faceTable_new)
+        distance = get_length(he_idx, vertTable_new, heTable_new, faceTable_new, width, height)
 
         # check if the two faces that share the hes are triangles
         he_prev = he[0]
@@ -184,13 +186,17 @@ def update_T1(
             faceTable_new = faceTable_new.at[next_twin_he[5]].set(next_twin_he_idx)
             faceTable_new = faceTable_new.at[twin_next_he[5]].set(twin_next_he_idx)
 
-            vertTable_new_T1, heTable_new_T1, faceTable_new_T1 = update_pbc(vertTable_new, heTable_new, faceTable_new)
+            vertTable_new_T1, heTable_new_T1, faceTable_new_T1 = update_pbc(
+                vertTable_new, heTable_new, faceTable_new, width, height
+            )
 
             # Compute final L_in after T1
             L_in_T1 = L_in(
                 vertTable_new_T1[selected_verts],
                 heTable_new_T1[selected_hes],
                 faceTable_new_T1[selected_faces],
+                width,
+                height,
                 vert_params,
                 he_params,
                 face_params,
@@ -263,7 +269,7 @@ def update_T1(
             vertTable_new = vertTable_new.at[twin_he[4], 1].set(last_y_source_he)
 
             vertTable_new_no_T1, heTable_new_no_T1, faceTable_new_no_T1 = update_pbc(
-                vertTable_new, heTable_new, faceTable_new
+                vertTable_new, heTable_new, faceTable_new, width, height
             )
 
             # Compute initial L_in
@@ -271,6 +277,8 @@ def update_T1(
                 vertTable_new_no_T1[selected_verts],
                 heTable_new_no_T1[selected_hes],
                 faceTable_new_no_T1[selected_faces],
+                width,
+                height,
                 vert_params,
                 he_params,
                 face_params,

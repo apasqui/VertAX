@@ -5,7 +5,7 @@ from enum import Enum
 import jax
 import jax.numpy as jnp
 import optax
-from jax import grad, jacfwd, jit, lax, Array
+from jax import grad, jacfwd, lax
 
 from vertax.geo import update_pbc
 from vertax.topo import update_T1
@@ -17,9 +17,11 @@ class OptimizationTarget(Enum):
     VERTICES = 0
     EDGES = 1
     FACES = 2
-    VERTEX_PARAMETERS = 3
-    EDGE_PARAMETERS = 4
-    FACE_PARAMETERS = 5
+    # width = 3
+    # height = 4
+    VERTEX_PARAMETERS = 5
+    EDGE_PARAMETERS = 6
+    FACE_PARAMETERS = 7
 
 
 ###############################
@@ -31,6 +33,8 @@ def minimize(
     vertTable,
     heTable,
     faceTable,
+    width: float,
+    height: float,
     vert_params,
     he_params,
     face_params,
@@ -45,6 +49,10 @@ def minimize(
     selected_faces=None,
     optimization_target: OptimizationTarget = OptimizationTarget.VERTICES,
 ):
+    # ensure width and height are hashable...
+    width = float(width)
+    height = float(height)
+
     if selected_verts is None:
         selected_verts = jnp.arange(vertTable.shape[0])
     if selected_hes is None:
@@ -89,6 +97,8 @@ def minimize(
         vertTable[selected_verts],
         heTable[selected_hes],
         faceTable[selected_faces],
+        width,
+        height,
         vert_params[selected_verts],
         he_params[selected_hes],
         face_params[selected_faces],
@@ -99,15 +109,29 @@ def minimize(
     step_count = jnp.array(0)
     should_stop = jnp.array(False)
 
-    @jit
     def update_step(carry):
-        vt, ht, ft, vp, hp, fp, opt_state, prev_L_values, stagnation_count, step_count, should_stop, L_list = carry
+        (
+            vt,
+            ht,
+            ft,
+            vp,
+            hp,
+            fp,
+            opt_state,
+            prev_L_values,
+            stagnation_count,
+            step_count,
+            should_stop,
+            L_list,
+        ) = carry
 
         # 1) Compute loss
         L_current = L_in(
             vt[selected_verts],
             ht[selected_hes],
             ft[selected_faces],
+            width,
+            height,
             vp[selected_verts],
             hp[selected_hes],
             fp[selected_faces],
@@ -121,7 +145,7 @@ def minimize(
         should_stop = (stagnation_count >= patience) | (step_count >= iterations_max - 1)
 
         # 3) Gradient wrt chosen argnums
-        grads = jacfwd(L_in, argnums=optimization_target.value)(vt, ht, ft, vp, hp, fp)
+        grads = jacfwd(L_in, argnums=optimization_target.value)(vt, ht, ft, width, height, vp, hp, fp)
 
         # 4) Optimizer update
         updates, opt_state = solver.update(grads, opt_state)
@@ -143,8 +167,8 @@ def minimize(
                 fp = fp.at[sel].set(fp[sel] + updates_sel)
 
         # 6) Geometry updates
-        vt, ht, ft = update_pbc(vt, ht, ft)
-        vt, ht, ft = update_T1(vt, ht, ft, vp, hp, fp, L_in, min_dist_T1)
+        vt, ht, ft = update_pbc(vt, ht, ft, width, height)
+        vt, ht, ft = update_T1(vt, ht, ft, width, height, vp, hp, fp, L_in, min_dist_T1)
 
         # 7) Shift prev_L_values
         prev_L_values = prev_L_values.at[1:].set(prev_L_values[:-1])
@@ -152,7 +176,20 @@ def minimize(
 
         step_count += 1
 
-        return (vt, ht, ft, vp, hp, fp, opt_state, prev_L_values, stagnation_count, step_count, should_stop, L_list)
+        return (
+            vt,
+            ht,
+            ft,
+            vp,
+            hp,
+            fp,
+            opt_state,
+            prev_L_values,
+            stagnation_count,
+            step_count,
+            should_stop,
+            L_list,
+        )
 
     def cond_fn(state):
         return jnp.logical_not(state[10])  # should_stop
@@ -186,6 +223,8 @@ def inner_opt(
     vertTable,
     heTable,
     faceTable,
+    width: float,
+    height: float,
     vert_params,
     he_params,
     face_params,
@@ -204,6 +243,8 @@ def inner_opt(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -227,6 +268,8 @@ def cost_ad(
     vertTable,
     heTable,
     faceTable,
+    width: float,
+    height: float,
     vert_params,
     he_params,
     face_params,
@@ -249,6 +292,8 @@ def cost_ad(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -267,6 +312,8 @@ def cost_ad(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vertTable_target,
         heTable_target,
         faceTable_target,
@@ -283,6 +330,8 @@ def outer_opt(
     vertTable,
     heTable,
     faceTable,
+    width: float,
+    height: float,
     vert_params,
     he_params,
     face_params,
@@ -302,10 +351,12 @@ def outer_opt(
     selected_faces,
     image_target,
 ):
-    grad_verts = jacfwd(cost_ad, argnums=3)(
+    grad_verts = jacfwd(cost_ad, argnums=5)(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -325,10 +376,12 @@ def outer_opt(
         image_target,
     )
 
-    grad_hes = jacfwd(cost_ad, argnums=4)(
+    grad_hes = jacfwd(cost_ad, argnums=6)(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -348,10 +401,12 @@ def outer_opt(
         image_target,
     )
 
-    grad_faces = jacfwd(cost_ad, argnums=5)(
+    grad_faces = jacfwd(cost_ad, argnums=7)(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -392,6 +447,8 @@ def loss_ep(
     vertTable,
     heTable,
     faceTable,
+    width,
+    height,
     vert_params,
     he_params,
     face_params,
@@ -406,12 +463,14 @@ def loss_ep(
     image_target,
     beta,
 ):
-    loss_inner_value = L_in(vertTable, heTable, faceTable, vert_params, he_params, face_params)
+    loss_inner_value = L_in(vertTable, heTable, faceTable, width, height, vert_params, he_params, face_params)
 
     loss_outer_value = L_out(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vertTable_target,
         heTable_target,
         faceTable_target,
@@ -430,6 +489,8 @@ def forward(
     vertTable,
     heTable,
     faceTable,
+    width: float,
+    height: float,
     vert_params,
     he_params,
     face_params,
@@ -454,6 +515,8 @@ def forward(
             vt,
             ht,
             ft,
+            width,
+            height,
             vp,
             hp,
             fp,
@@ -473,6 +536,8 @@ def forward(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -495,6 +560,8 @@ def outer_eq_prop(
     vertTable,
     heTable,
     faceTable,
+    width: float,
+    height: float,
     vert_params,
     he_params,
     face_params,
@@ -519,6 +586,8 @@ def outer_eq_prop(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -543,6 +612,8 @@ def outer_eq_prop(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -563,10 +634,12 @@ def outer_eq_prop(
         beta,
     )
 
-    grad_loss_ep_free_verts = jacfwd(loss_ep, argnums=3)(
+    grad_loss_ep_free_verts = jacfwd(loss_ep, argnums=5)(
         vertTable_free,
         heTable_free,
         faceTable_free,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -582,10 +655,12 @@ def outer_eq_prop(
         beta=0.0,
     )
 
-    grad_loss_ep_nudged_verts = jacfwd(loss_ep, argnums=3)(
+    grad_loss_ep_nudged_verts = jacfwd(loss_ep, argnums=5)(
         vertTable_nudged,
         heTable_nudged,
         faceTable_nudged,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -601,10 +676,12 @@ def outer_eq_prop(
         beta,
     )
 
-    grad_loss_ep_free_hes = jacfwd(loss_ep, argnums=4)(
+    grad_loss_ep_free_hes = jacfwd(loss_ep, argnums=6)(
         vertTable_free,
         heTable_free,
         faceTable_free,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -620,10 +697,12 @@ def outer_eq_prop(
         beta=0.0,
     )
 
-    grad_loss_ep_nudged_hes = jacfwd(loss_ep, argnums=4)(
+    grad_loss_ep_nudged_hes = jacfwd(loss_ep, argnums=6)(
         vertTable_nudged,
         heTable_nudged,
         faceTable_nudged,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -639,10 +718,12 @@ def outer_eq_prop(
         beta,
     )
 
-    grad_loss_ep_free_faces = jacfwd(loss_ep, argnums=5)(
+    grad_loss_ep_free_faces = jacfwd(loss_ep, argnums=7)(
         vertTable_free,
         heTable_free,
         faceTable_free,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -658,10 +739,12 @@ def outer_eq_prop(
         beta=0.0,
     )
 
-    grad_loss_ep_nudged_faces = jacfwd(loss_ep, argnums=5)(
+    grad_loss_ep_nudged_faces = jacfwd(loss_ep, argnums=7)(
         vertTable_nudged,
         heTable_nudged,
         faceTable_nudged,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -702,6 +785,8 @@ def outer_implicit(
     vertTable,
     heTable,
     faceTable,
+    width: float,
+    height: float,
     vert_params,
     he_params,
     face_params,
@@ -721,16 +806,20 @@ def outer_implicit(
     selected_faces,
     image_target,
 ):
-    def L_in_flatten(vertTable_flatten, heTable, faceTable, vert_params, he_params, face_params):
+    def L_in_flatten(
+        vertTable_flatten, heTable, faceTable, width: float, height: float, vert_params, he_params, face_params
+    ):
         vertTable_tmp = jnp.hstack(
             (vertTable_flatten.reshape(len(vertTable_flatten) // 2, 2), jnp.zeros((len(vertTable_flatten) // 2, 1)))
         )
-        return L_in(vertTable_tmp, heTable, faceTable, vert_params, he_params, face_params)
+        return L_in(vertTable_tmp, heTable, faceTable, width, height, vert_params, he_params, face_params)
 
     (vertTable_eq, heTable_eq, faceTable_eq), L_in_value = inner_opt(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -746,17 +835,17 @@ def outer_implicit(
     )
 
     H = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=0)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, vert_params, he_params, face_params
+        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
     )
 
-    crossderivative_verts = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=3)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    crossderivative_verts = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=5)(
+        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
     )
-    crossderivative_hes = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=4)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    crossderivative_hes = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=6)(
+        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
     )
-    crossderivative_faces = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=5)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    crossderivative_faces = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=7)(
+        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
     )
 
     L_in_derivative_verts = -jax.numpy.linalg.solve(H, crossderivative_verts)
@@ -766,19 +855,43 @@ def outer_implicit(
     grad_verts = (
         L_in_derivative_verts.T
         @ grad(L_out, argnums=0)(
-            vertTable_eq, heTable_eq, faceTable_eq, vertTable_target, heTable_target, faceTable_target, image_target
+            vertTable_eq,
+            heTable_eq,
+            faceTable_eq,
+            width,
+            height,
+            vertTable_target,
+            heTable_target,
+            faceTable_target,
+            image_target,
         )[:, :2].flatten()
     )
     grad_hes = (
         L_in_derivative_hes.T
         @ grad(L_out, argnums=0)(
-            vertTable_eq, heTable_eq, faceTable_eq, vertTable_target, heTable_target, faceTable_target, image_target
+            vertTable_eq,
+            heTable_eq,
+            faceTable_eq,
+            width,
+            height,
+            vertTable_target,
+            heTable_target,
+            faceTable_target,
+            image_target,
         )[:, :2].flatten()
     )
     grad_faces = (
         L_in_derivative_faces.T
         @ grad(L_out, argnums=0)(
-            vertTable_eq, heTable_eq, faceTable_eq, vertTable_target, heTable_target, faceTable_target, image_target
+            vertTable_eq,
+            heTable_eq,
+            faceTable_eq,
+            width,
+            height,
+            vertTable_target,
+            heTable_target,
+            faceTable_target,
+            image_target,
         )[:, :2].flatten()
     )
 
@@ -803,6 +916,8 @@ def outer_adjoint_state(
     vertTable,
     heTable,
     faceTable,
+    width: float,
+    height: float,
     vert_params,
     he_params,
     face_params,
@@ -822,16 +937,20 @@ def outer_adjoint_state(
     selected_faces,
     image_target,
 ):
-    def L_in_flatten(vertTable_flatten, heTable, faceTable, vert_params, he_params, face_params):
+    def L_in_flatten(
+        vertTable_flatten, heTable, faceTable, width: float, height: float, vert_params, he_params, face_params
+    ):
         vertTable_tmp = jnp.hstack(
             (vertTable_flatten.reshape(len(vertTable_flatten) // 2, 2), jnp.zeros((len(vertTable_flatten) // 2, 1)))
         )
-        return L_in(vertTable_tmp, heTable, faceTable, vert_params, he_params, face_params)
+        return L_in(vertTable_tmp, heTable, faceTable, width, height, vert_params, he_params, face_params)
 
     (vertTable_eq, heTable_eq, faceTable_eq), L_in_value = inner_opt(
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -847,25 +966,33 @@ def outer_adjoint_state(
     )
 
     H = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=0)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, vert_params, he_params, face_params
+        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
     )
 
     # print(jax.numpy.linalg.eig(H)[0].max())
     # print(jax.numpy.linalg.eig(H)[0].min())
     # print('\n')
 
-    crossderivative_verts = jacfwd(jacfwd(L_in_flatten, argnums=3), argnums=0)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    crossderivative_verts = jacfwd(jacfwd(L_in_flatten, argnums=5), argnums=0)(
+        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
     )
-    crossderivative_hes = jacfwd(jacfwd(L_in_flatten, argnums=4), argnums=0)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    crossderivative_hes = jacfwd(jacfwd(L_in_flatten, argnums=6), argnums=0)(
+        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
     )
-    crossderivative_faces = jacfwd(jacfwd(L_in_flatten, argnums=5), argnums=0)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    crossderivative_faces = jacfwd(jacfwd(L_in_flatten, argnums=7), argnums=0)(
+        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
     )
 
     gradout = grad(L_out, argnums=0)(
-        vertTable_eq, heTable_eq, faceTable_eq, vertTable_target, heTable_target, faceTable_target, image_target
+        vertTable_eq,
+        heTable_eq,
+        faceTable_eq,
+        width,
+        height,
+        vertTable_target,
+        heTable_target,
+        faceTable_target,
+        image_target,
     )[:, :2].flatten()
 
     Lambda = -jax.numpy.linalg.solve(H, gradout)
@@ -904,6 +1031,8 @@ def bilevel_opt(
     vertTable,
     heTable,
     faceTable,
+    width: float,
+    height: float,
     vert_params,
     he_params,
     face_params,
@@ -931,6 +1060,8 @@ def bilevel_opt(
                 vertTable,
                 heTable,
                 faceTable,
+                width,
+                height,
                 vert_params,
                 he_params,
                 face_params,
@@ -955,6 +1086,8 @@ def bilevel_opt(
                 vertTable,
                 heTable,
                 faceTable,
+                width,
+                height,
                 vert_params,
                 he_params,
                 face_params,
@@ -974,6 +1107,8 @@ def bilevel_opt(
                 vertTable,
                 heTable,
                 faceTable,
+                width,
+                height,
                 vert_params,
                 he_params,
                 face_params,
@@ -999,6 +1134,8 @@ def bilevel_opt(
                 vertTable,
                 heTable,
                 faceTable,
+                width,
+                height,
                 vert_params,
                 he_params,
                 face_params,
@@ -1024,6 +1161,8 @@ def bilevel_opt(
                 vertTable,
                 heTable,
                 faceTable,
+                width,
+                height,
                 vert_params,
                 he_params,
                 face_params,
@@ -1048,6 +1187,8 @@ def bilevel_opt(
                 vertTable,
                 heTable,
                 faceTable,
+                width,
+                height,
                 vert_params,
                 he_params,
                 face_params,
@@ -1067,6 +1208,8 @@ def bilevel_opt(
                 vertTable,
                 heTable,
                 faceTable,
+                width,
+                height,
                 vert_params,
                 he_params,
                 face_params,
@@ -1091,6 +1234,8 @@ def bilevel_opt(
                 vertTable,
                 heTable,
                 faceTable,
+                width,
+                height,
                 vert_params,
                 he_params,
                 face_params,

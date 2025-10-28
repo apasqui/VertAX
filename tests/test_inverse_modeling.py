@@ -1,5 +1,6 @@
 """Test the whole pipeline of bilevel optimization."""
 
+from functools import partial
 from time import perf_counter
 
 import jax.numpy as jnp
@@ -41,24 +42,24 @@ def test_inverse_modeling_for_regressions() -> None:
         return (a - face_param) ** 2
 
     @jit
-    def hedge_part(he, he_param, vertTable, heTable, faceTable):
-        edge_lengths = get_length(he, vertTable, heTable, faceTable)
+    def hedge_part(he, he_param, vertTable, heTable, faceTable, width: float, height: float):
+        edge_lengths = get_length(he, vertTable, heTable, faceTable, width, height)
         return he_param * edge_lengths
 
     @jit
-    def energy(vertTable, heTable, faceTable, vert_params, he_params, face_params):
+    def energy(vertTable, heTable, faceTable, width: float, height: float, vert_params, he_params, face_params):
         K_areas = 20
 
         def mapped_areas_part(face, face_param):
             return area_part(face, face_param, vertTable, heTable, faceTable)
 
         def mapped_hedges_part(he, he_param):
-            return hedge_part(he, he_param, vertTable, heTable, faceTable)
+            return hedge_part(he, he_param, vertTable, heTable, faceTable, width, height)
 
         areas_part = vmap(mapped_areas_part)(jnp.arange(len(faceTable)), face_params)
         hedges_part = vmap(mapped_hedges_part)(jnp.arange(2, len(heTable)), he_params[2:])
         return (
-            (2 * he_params_reference * get_length(0, vertTable, heTable, faceTable))
+            (2 * he_params_reference * get_length(0, vertTable, heTable, faceTable, width, height))
             + jnp.sum(hedges_part)
             + (0.5 * K_areas) * jnp.sum(areas_part)
         )
@@ -66,6 +67,8 @@ def test_inverse_modeling_for_regressions() -> None:
     # Initial condition (vertices)
     key = jax.random.PRNGKey(0)  # change the seed for different results
     L_box = jnp.sqrt(n_cells)
+    width = float(L_box)
+    height = float(L_box)
     seeds = L_box * jax.random.uniform(key, shape=(n_cells, 2))
     vertTable, heTable, faceTable = create_mesh_from_seeds(seeds)
 
@@ -82,6 +85,8 @@ def test_inverse_modeling_for_regressions() -> None:
         vertTable,
         heTable,
         faceTable,
+        width,
+        height,
         vert_params,
         he_params,
         face_params,
@@ -112,6 +117,8 @@ def test_inverse_modeling_for_regressions() -> None:
         vertTable_target,
         heTable_target,
         faceTable_target,
+        width,
+        height,
         vert_params_target,
         he_params_target,
         face_params_target,
@@ -139,24 +146,24 @@ def test_inverse_modeling_for_regressions() -> None:
         return (a - fixed_areas_target[face]) ** 2
 
     @jit
-    def hedge_part_v2(he, he_param, vertTable, heTable, faceTable):
-        edge_lengths = get_length(he, vertTable, heTable, faceTable)
+    def hedge_part_v2(he, he_param, vertTable, heTable, faceTable, width: float, height: float):
+        edge_lengths = get_length(he, vertTable, heTable, faceTable, width, height)
         return he_param * edge_lengths
 
     @jit
-    def energy_v2(vertTable, heTable, faceTable, vert_params, he_params, face_params):
+    def energy_v2(vertTable, heTable, faceTable, width: float, height: float, vert_params, he_params, face_params):
         K_areas = 20
 
         def mapped_areas_part(face):
             return area_part_v2(face, vertTable, heTable, faceTable)
 
         def mapped_hedges_part(he, he_param):
-            return hedge_part_v2(he, he_param, vertTable, heTable, faceTable)
+            return hedge_part_v2(he, he_param, vertTable, heTable, faceTable, width, height)
 
         areas_part = vmap(mapped_areas_part)(jnp.arange(len(faceTable)))
         hedges_part = vmap(mapped_hedges_part)(jnp.arange(2, len(heTable)), he_params[2:])
         return (
-            (2 * he_params_reference_target * get_length(0, vertTable, heTable, faceTable))
+            (2 * he_params_reference_target * get_length(0, vertTable, heTable, faceTable, width, height))
             + jnp.sum(hedges_part)
             + (0.5 * K_areas) * jnp.sum(areas_part)
         )
@@ -173,6 +180,8 @@ def test_inverse_modeling_for_regressions() -> None:
                     vertTable,
                     heTable,
                     faceTable,
+                    width,
+                    height,
                     vertTable_target,
                     heTable_target,
                     faceTable_target,
@@ -188,6 +197,8 @@ def test_inverse_modeling_for_regressions() -> None:
             vertTable,
             heTable,
             faceTable,
+            width,
+            height,
             vert_params,
             he_params,
             face_params,

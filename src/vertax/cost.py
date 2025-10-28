@@ -1,5 +1,7 @@
+from functools import partial
+
 import jax.numpy as jnp
-from jax import jit, vmap
+from jax import jit, vmap, Array
 from jax.numpy import arange, array, diff, einsum, exp, expand_dims, int32, meshgrid, pi, sqrt, stack
 from jax.numpy import sinc as npsinc
 from jax.numpy.fft import ifft2
@@ -158,6 +160,8 @@ def cost_v2v(
     vertTable,
     heTable,
     faceTable,
+    width: float,
+    height: float,
     vertTable_target,
     heTable_target,
     faceTable_target,
@@ -173,10 +177,10 @@ def cost_v2v(
     if selected_faces is None:
         selected_faces = jnp.arange(faceTable.shape[0])
 
-    L_box = jnp.sqrt(len(faceTable))
+    # L_box = jnp.sqrt(len(faceTable))
 
     @jit
-    def squared_distance(v, vertTable, vertTable_target):
+    def squared_distance(v, vertTable, vertTable_target, width: float, height: float):
         return (
             jnp.min(
                 jnp.array(
@@ -187,43 +191,43 @@ def cost_v2v(
                         )
                         ** 0.5,
                         (
-                            (vertTable[v][0] - (vertTable_target[v][0] + L_box)) ** 2
+                            (vertTable[v][0] - (vertTable_target[v][0] + width)) ** 2
                             + (vertTable[v][1] - vertTable_target[v][1]) ** 2
                         )
                         ** 0.5,
                         (
-                            (vertTable[v][0] - (vertTable_target[v][0] - L_box)) ** 2
+                            (vertTable[v][0] - (vertTable_target[v][0] - width)) ** 2
                             + (vertTable[v][1] - vertTable_target[v][1]) ** 2
                         )
                         ** 0.5,
                         (
                             (vertTable[v][0] - vertTable_target[v][0]) ** 2
-                            + (vertTable[v][1] - (vertTable_target[v][1] + L_box)) ** 2
+                            + (vertTable[v][1] - (vertTable_target[v][1] + height)) ** 2
                         )
                         ** 0.5,
                         (
                             (vertTable[v][0] - vertTable_target[v][0]) ** 2
-                            + (vertTable[v][1] - (vertTable_target[v][1] - L_box)) ** 2
+                            + (vertTable[v][1] - (vertTable_target[v][1] - height)) ** 2
                         )
                         ** 0.5,
                         (
-                            (vertTable[v][0] - (vertTable_target[v][0] + L_box)) ** 2
-                            + (vertTable[v][1] - (vertTable_target[v][1] + L_box)) ** 2
+                            (vertTable[v][0] - (vertTable_target[v][0] + width)) ** 2
+                            + (vertTable[v][1] - (vertTable_target[v][1] + height)) ** 2
                         )
                         ** 0.5,
                         (
-                            (vertTable[v][0] - (vertTable_target[v][0] + L_box)) ** 2
-                            + (vertTable[v][1] - (vertTable_target[v][1] - L_box)) ** 2
+                            (vertTable[v][0] - (vertTable_target[v][0] + width)) ** 2
+                            + (vertTable[v][1] - (vertTable_target[v][1] - height)) ** 2
                         )
                         ** 0.5,
                         (
-                            (vertTable[v][0] - (vertTable_target[v][0] - L_box)) ** 2
-                            + (vertTable[v][1] - (vertTable_target[v][1] + L_box)) ** 2
+                            (vertTable[v][0] - (vertTable_target[v][0] - width)) ** 2
+                            + (vertTable[v][1] - (vertTable_target[v][1] + height)) ** 2
                         )
                         ** 0.5,
                         (
-                            (vertTable[v][0] - (vertTable_target[v][0] - L_box)) ** 2
-                            + (vertTable[v][1] - (vertTable_target[v][1] - L_box)) ** 2
+                            (vertTable[v][0] - (vertTable_target[v][0] - width)) ** 2
+                            + (vertTable[v][1] - (vertTable_target[v][1] - height)) ** 2
                         )
                         ** 0.5,
                     ]
@@ -231,7 +235,9 @@ def cost_v2v(
             )
         ) ** 2
 
-    mapped_fn = lambda v: (squared_distance(v, vertTable, vertTable_target))
+    def mapped_fn(v):
+        return squared_distance(v, vertTable, vertTable_target, width, height)
+
     distances = vmap(mapped_fn)(selected_verts)
 
     return (1.0 / (2 * len(distances))) * jnp.sum(distances)
@@ -239,9 +245,9 @@ def cost_v2v(
 
 @jit
 def cost_mesh2image(
-    vertTable: jnp.array,
-    heTable: jnp.array,
-    faceTable: jnp.array,
+    vertTable: Array,
+    heTable: Array,
+    faceTable: Array,
     selected_verts,
     selected_hes,
     selected_faces,
@@ -300,9 +306,9 @@ def cost_mesh2image(
 
 @jit
 def cost_areas(
-    vertTable: jnp.array,
-    heTable: jnp.array,
-    faceTable: jnp.array,
+    vertTable: Array,
+    heTable: Array,
+    faceTable: Array,
     selected_verts,
     selected_hes,
     selected_faces,

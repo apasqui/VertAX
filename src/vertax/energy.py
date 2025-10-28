@@ -1,21 +1,31 @@
 import jax.numpy as jnp
-from jax import jit, vmap
+from jax import Array, jit, vmap
 
 from vertax.geo import get_area, get_length, get_perimeter
 
 
 @jit
-def cell_energy(face, face_param, vertTable, heTable, faceTable):
+def cell_energy(face, face_param, vertTable, heTable, faceTable, width: float, height: float):
     area = get_area(face, vertTable, heTable, faceTable)
-    perimeter = get_perimeter(face, vertTable, heTable, faceTable)
+    perimeter = get_perimeter(face, vertTable, heTable, faceTable, width, height)
     return ((area - 1) ** 2) + ((perimeter - face_param) ** 2)
 
 
 @jit
 def energy_shape_factor_homo(
-    vertTable, heTable, faceTable, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params
+    vertTable,
+    heTable,
+    faceTable,
+    width: float,
+    height: float,
+    selected_verts,
+    selected_hes,
+    selected_faces,
+    vert_params,
+    he_params,
+    face_params,
 ):
-    mapped_fn = lambda face, param: cell_energy(face, param, vertTable, heTable, faceTable)
+    mapped_fn = lambda face, param: cell_energy(face, param, vertTable, heTable, faceTable, width, height)
     face_params_broadcasted = jnp.broadcast_to(face_params, (len(faceTable),) + face_params.shape[1:])
     cell_energies = vmap(mapped_fn)(jnp.arange(len(faceTable)), face_params_broadcasted)
     return jnp.sum(cell_energies)
@@ -23,33 +33,60 @@ def energy_shape_factor_homo(
 
 @jit
 def energy_shape_factor_hetero(
-    vertTable, heTable, faceTable, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params
+    vertTable,
+    heTable,
+    faceTable,
+    width: float,
+    height: float,
+    selected_verts,
+    selected_hes,
+    selected_faces,
+    vert_params,
+    he_params,
+    face_params,
 ):
-    mapped_fn = lambda face, param: cell_energy(face, param, vertTable, heTable, faceTable)
+    mapped_fn = lambda face, param: cell_energy(face, param, vertTable, heTable, faceTable, width, height)
     cell_energies = vmap(mapped_fn)(selected_faces, face_params[selected_faces])
     # cell_energies = vmap(mapped_fn)(jnp.arange(len(faceTable)), face_params)
     return jnp.sum(cell_energies)
 
 
 @jit
-def area_part(face: float, face_param: jnp.array, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
+def area_part(face: float, face_param: Array, vertTable: Array, heTable: Array, faceTable: Array):
     a = get_area(face, vertTable, heTable, faceTable)
     return (a - face_param) ** 2
 
 
 @jit
-def hedge_part(he: float, he_param: jnp.array, vertTable: jnp.array, heTable: jnp.array, faceTable: jnp.array):
-    l = get_length(he, vertTable, heTable, faceTable)
-    return he_param * l
+def hedge_part(
+    he: float, he_param: Array, vertTable: Array, heTable: Array, faceTable: Array, width: float, height: float
+):
+    length = get_length(he, vertTable, heTable, faceTable, width, height)
+    return he_param * length
 
 
 @jit
 def energy_line_tensions(
-    vertTable, heTable, faceTable, selected_verts, selected_hes, selected_faces, vert_params, he_params, face_params
+    vertTable,
+    heTable,
+    faceTable,
+    width: float,
+    height: float,
+    selected_verts,
+    selected_hes,
+    selected_faces,
+    vert_params,
+    he_params,
+    face_params,
 ):
     K_areas = 20
-    mapped_areas_part = lambda face, face_param: area_part(face, face_param, vertTable, heTable, faceTable)
-    mapped_hedges_part = lambda he, he_param: hedge_part(he, he_param, vertTable, heTable, faceTable)
+
+    def mapped_areas_part(face, face_param):
+        return area_part(face, face_param, vertTable, heTable, faceTable)
+
+    def mapped_hedges_part(he, he_param):
+        return hedge_part(he, he_param, vertTable, heTable, faceTable, width, height)
+
     areas_part = vmap(mapped_areas_part)(jnp.arange(len(faceTable)), face_params)
     hedges_part = vmap(mapped_hedges_part)(jnp.arange(len(heTable)), he_params)
     # areas_part = vmap(mapped_areas_part)(selected_faces, face_params[selected_faces])

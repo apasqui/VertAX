@@ -39,6 +39,8 @@ class Mesh(metaclass=NoPublicConstructor):
         self.vertices: Array = jnp.array([])
         self.edges: Array = jnp.array([])
         self.faces: Array = jnp.array([])
+        self.width: float = 0
+        self.height: float = 0
 
     def save_mesh(self, path: str) -> None:
         """Save mesh to a file.

@@ -25,17 +25,17 @@ class PBCMesh(Mesh):
     def get_length(self, half_edge_id: int) -> float:
         """Get the length of an edge."""
         return float(
-            get_length(half_edge_id, self.vertices, self.edges, self.faces)
+            get_length(half_edge_id, self.vertices, self.edges, self.faces, self.width, self.height)
         )  # if bug maybe remove the conversion to a float.
 
     def get_length_with_offset(self, half_edge_id: int) -> Array:
         """Get the length of an edge along with its offsets in an array (length, offset x, offset y)."""
-        return get_length_with_offset(half_edge_id, self.vertices, self.edges, self.faces)
+        return get_length_with_offset(half_edge_id, self.vertices, self.edges, self.faces, self.width, self.height)
 
     def get_perimeter(self, face_id: int) -> float:
         """Get the perimeter of a face."""
         return float(
-            get_perimeter(face_id, self.vertices, self.edges, self.faces)
+            get_perimeter(face_id, self.vertices, self.edges, self.faces, self.width, self.height)
         )  # if bug maybe remove the conversion to a float.
 
     def get_area(self, face_id: int) -> float:
@@ -46,7 +46,9 @@ class PBCMesh(Mesh):
 
     def update_boundary_conditions(self) -> None:
         """Force periodic boundary conditions again after an update."""
-        self.vertices, self.edges, self.faces = update_pbc(self.vertices, self.edges, self.faces)
+        self.vertices, self.edges, self.faces = update_pbc(
+            self.vertices, self.edges, self.faces, self.width, self.height
+        )
 
     @classmethod
     def periodic_voronoi_from_random_seeds(cls, nb_seeds: int, random_key: int) -> Self:
@@ -60,19 +62,22 @@ class PBCMesh(Mesh):
             Self: The corresponding mesh.
         """
         L_box = jnp.sqrt(nb_seeds)
+        width = float(L_box)
+        height = float(L_box)
         key = jax.random.PRNGKey(random_key)
         seeds = L_box * jax.random.uniform(key, (nb_seeds, 2))
-        return cls._periodic_voronoi_from_seeds(seeds)
+        return cls._periodic_voronoi_from_seeds(seeds, width, height)
 
     @classmethod
-    def _periodic_voronoi_from_seeds(cls, seeds: Array) -> Self:
+    def _periodic_voronoi_from_seeds(cls, seeds: Array, width: float, height: float) -> Self:
         """Create a Periodic Voronoi Mesh from a list of seeds.
 
-        The seeds are assumed to have positive x and y positions,
-        in a square of length sqrt(len(seeds)).
+        The seeds are assumed to have positive x and y positions.
 
         Args:
             seeds (Array[float32]): jax float array of seed positions of shape (nbSeeds, 2).
+            width (float): width of the box containing the seeds.
+            height (float): height of the box containing the seeds.
         """
         (
             L_box,
@@ -96,6 +101,8 @@ class PBCMesh(Mesh):
         pbc_mesh.vertices = jnp.array(vertices, dtype=np.float32)
         pbc_mesh.edges = jnp.array(edges, dtype=np.int32)
         pbc_mesh.faces = jnp.array(faces, dtype=np.int32)
+        pbc_mesh.width = width
+        pbc_mesh.height = height
 
         return pbc_mesh
 
