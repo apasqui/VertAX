@@ -93,9 +93,20 @@ def get_area(face, vertTable: Array, heTable: Array, faceTable: Array, width: fl
     return 0.5 * jnp.abs(sum_edges(face, heTable, faceTable, fun)[0])
 
 
-# select verts, hes, faces for faces with all verts inside L_box_inner
-def select_verts_hes_faces(vertTable: Array, heTable: Array, faceTable: Array, L_box_inner: float):
-    L_box = jnp.sqrt(len(faceTable))
+def select_verts_hes_faces(
+    vertTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    min_x: float,
+    max_x: float,
+    min_y: float,
+    max_y: float,
+):
+    """Select verts, hes, faces for faces with all verts inside a inner rectangle.
+
+    The inner rectangle is definde by bounds that should be between 0 and width or height.
+    """
+    # L_box = jnp.sqrt(len(faceTable))
 
     selected_faces = []
     selected_hes = jnp.array([], dtype=int)
@@ -114,55 +125,7 @@ def select_verts_hes_faces(vertTable: Array, heTable: Array, faceTable: Array, L
             vert_x, vert_y = vertTable.at[v_source, 0].get(), vertTable.at[v_source, 1].get()
 
             # check if the vertex is outside the inner box
-            if not (
-                ((L_box - L_box_inner) / 2.0) <= vert_x <= ((L_box + L_box_inner) / 2.0)
-                and ((L_box - L_box_inner) / 2.0) <= vert_y <= ((L_box + L_box_inner) / 2.0)
-            ):
-                all_inside = False
-                break
-
-            hes_idxs.append(he)
-            verts_idxs.append(v_source)
-
-            he = heTable.at[he, 1].get()
-            if he == start_he:
-                break
-
-        if all_inside:
-            selected_faces.append(face)
-            selected_hes = jnp.concatenate((selected_hes, jnp.array(hes_idxs)))
-            selected_verts = jnp.concatenate((selected_verts, jnp.array(verts_idxs)))
-
-    # unique elements in each array
-    selected_verts = jnp.unique(selected_verts)
-    selected_hes = jnp.unique(selected_hes)
-    selected_faces = jnp.unique(jnp.array(selected_faces))
-
-    return selected_verts, selected_hes, selected_faces
-
-
-# select verts, hes, faces for faces with all verts inside a rectangle
-def select_verts_hes_faces_rectangle(vertTable, heTable, faceTable, L_bottom, L_top):
-    L_x = jnp.sqrt(len(faceTable))
-
-    selected_faces = []
-    selected_hes = jnp.array([], dtype=int)
-    selected_verts = jnp.array([], dtype=int)
-
-    for face in range(len(faceTable)):
-        start_he = faceTable.at[face].get()
-        he = start_he
-
-        hes_idxs = []
-        verts_idxs = []
-        all_inside = True  # flag to check if all vertices are inside L_box_inner
-
-        while True:
-            v_source = heTable.at[he, 3].get()
-            vert_x, vert_y = vertTable.at[v_source, 0].get(), vertTable.at[v_source, 1].get()
-
-            # check if the vertex is outside the inner box
-            if not (((0.0) <= vert_y <= (L_x)) and ((L_bottom) <= vert_x <= (L_top))):
+            if not (min_x <= vert_x <= max_x and min_y <= vert_y <= max_y):
                 all_inside = False
                 break
 
@@ -401,8 +364,8 @@ def get_shear_modulus(
             patience,
         )
 
-        selected_verts_new, selected_hes_new, selected_faces_new = select_verts_hes_faces_rectangle(
-            vertTable, heTable, faceTable, L_bottom, L_top
+        selected_verts_new, selected_hes_new, selected_faces_new = select_verts_hes_faces(
+            vertTable, heTable, faceTable, L_bottom, L_top, 0, height
         )
         face_params_new = face_params[selected_faces_new]
 
