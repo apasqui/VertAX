@@ -43,23 +43,26 @@ def test_compare_pbc_mesh_with_create_mesh_from_seeds() -> None:
     assert_array_equal(my_mesh.faces, faceTable)
 
 
-# def test_compare_pbc_mesh_with_create_mesh_from_image() -> None:
-#     """Compare the two from_seeds functions. They should be the same."""
-#     # Initial condition
-#     img = imread("tests/test_image.tif")
-#     vertTable, heTable, faceTable = create_mesh_from_image(img)
+def no_pytest_test_compare_pbc_mesh_with_create_mesh_from_image() -> None:
+    """Compare the two from_seeds functions. They should be the same."""
+    # Initial condition
+    img = imread("tests/test_image.tif")
+    print("create mesh from image...")
+    vertTable, heTable, faceTable = create_mesh_from_image(img)
 
-#     my_mesh = PBCMesh.periodic_voronoi_from_square_image(img)
+    print("done")
+    print("PBC now...")
+    my_mesh = PBCMesh.periodic_voronoi_from_square_image(img)
 
-#     assert_array_equal(my_mesh.vertices, vertTable)
-#     assert_array_equal(my_mesh.edges, heTable)
-#     assert_array_equal(my_mesh.faces, faceTable)
+    assert_array_equal(my_mesh.vertices, vertTable)
+    assert_array_equal(my_mesh.edges, heTable)
+    assert_array_equal(my_mesh.faces, faceTable)
 
-#     plot_mesh(vertTable, heTable, faceTable, L_box=img.shape[0])
+    plot_mesh(vertTable, heTable, faceTable, width=img.shape[0], height=img.shape[1])
 
 
 if __name__ == "__main__":
     test_private_constructor_mesh()
     test_mesh_can_be_privately_created()
     test_compare_pbc_mesh_with_create_mesh_from_seeds()
-    # test_compare_pbc_mesh_with_create_mesh_from_image()
+    no_pytest_test_compare_pbc_mesh_with_create_mesh_from_image()

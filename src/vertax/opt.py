@@ -5,7 +5,7 @@ from enum import Enum
 import jax
 import jax.numpy as jnp
 import optax
-from jax import grad, jacfwd, lax
+from jax import grad, jacfwd, lax, Array
 
 from vertax.geo import update_pbc
 from vertax.topo import update_T1
@@ -431,11 +431,11 @@ def outer_opt(
     opt_state = solver_outer.init(params)
     updates, opt_state = solver_outer.update(grads, opt_state, params)
     updated_params = optax.apply_updates(params, updates)
-    vert_params = updated_params["vert_params"]
-    he_params = updated_params["he_params"]
-    face_params = updated_params["face_params"]
+    new_vert_params: Array = updated_params["vert_params"]
+    new_he_params: Array = updated_params["he_params"]
+    new_face_params: Array = updated_params["face_params"]
 
-    return vert_params, he_params, face_params
+    return new_vert_params, new_he_params, new_face_params
 
 
 #############################
@@ -769,11 +769,11 @@ def outer_eq_prop(
     opt_state = solver_outer.init(params)
     updates, opt_state = solver_outer.update(grads, opt_state, params)
     updated_params = optax.apply_updates(params, updates)
-    vert_params = updated_params["vert_params"]
-    he_params = updated_params["he_params"]
-    face_params = updated_params["face_params"]
+    new_vert_params: Array = updated_params["vert_params"]
+    new_he_params: Array = updated_params["he_params"]
+    new_face_params: Array = updated_params["face_params"]
 
-    return vert_params, he_params, face_params
+    return new_vert_params, new_he_params, new_face_params
 
 
 ###########################
@@ -900,11 +900,11 @@ def outer_implicit(
     opt_state = solver_outer.init(params)
     updates, opt_state = solver_outer.update(grads, opt_state, params)
     updated_params = optax.apply_updates(params, updates)
-    vert_params = updated_params["vert_params"]
-    he_params = updated_params["he_params"]
-    face_params = updated_params["face_params"]
+    new_vert_params: Array = updated_params["vert_params"]
+    new_he_params: Array = updated_params["he_params"]
+    new_face_params: Array = updated_params["face_params"]
 
-    return vert_params, he_params, face_params
+    return new_vert_params, new_he_params, new_face_params
 
 
 ##########################
@@ -1006,11 +1006,11 @@ def outer_adjoint_state(
     opt_state = solver_outer.init(params)
     updates, opt_state = solver_outer.update(grads, opt_state, params)
     updated_params = optax.apply_updates(params, updates)
-    vert_params = updated_params["vert_params"]
-    he_params = updated_params["he_params"]
-    face_params = updated_params["face_params"]
+    new_vert_params: Array = updated_params["vert_params"]
+    new_he_params: Array = updated_params["he_params"]
+    new_face_params: Array = updated_params["face_params"]
 
-    return vert_params, he_params, face_params
+    return new_vert_params, new_he_params, new_face_params
 
 
 #############
