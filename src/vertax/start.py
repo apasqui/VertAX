@@ -220,7 +220,7 @@ def create_mesh_from_seeds(seeds: Array) -> tuple[Array, Array, Array]:  # noqa:
                 start_edge = (e[1], e[0])
                 visited.append(e)
             i += 1
-            e = edges_face[i % len(face)]
+            e = edges_face[i % len(edges_face)]
 
         order = 0
         sum0_offsets = 0
@@ -538,11 +538,13 @@ def create_mesh_from_image(image: NDArray, path: str = "./") -> tuple[Array, Arr
     for face in periodic_voronoi_faces:
         edges_face = [(f1, f2) for f1 in face for f2 in face if (f1, f2) in periodic_voronoi_edges]
         i = 0
-        start_edge = edges_face[i]
+        start_edge = edges_face[0]
         ordered_face = [start_edge]
         e = start_edge
         visited = [e]
+
         while sorted(edges_face) != sorted(visited):
+            print(f"Begin Loop {i} : {e} vs {start_edge}...")
             if e[0] == start_edge[1] and e not in visited:
                 ordered_face.append(e)
                 start_edge = e
@@ -551,6 +553,8 @@ def create_mesh_from_image(image: NDArray, path: str = "./") -> tuple[Array, Arr
                 ordered_face.append((e[1], e[0]))
                 start_edge = (e[1], e[0])
                 visited.append(e)
+            print(edges_face)
+            print(f"End Loop {i} : {sorted(edges_face)} vs {sorted(visited)} and ordered face is {ordered_face}...")
             i += 1
             e = edges_face[i % len(edges_face)]
         order = 0
