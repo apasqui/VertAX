@@ -121,16 +121,16 @@ def _jit_minimize(
 
         # 5) Apply updates to the chosen array on selected indices
         updates_sel = updates.at[sel].get()
+
+        # --- Conditional Application of Optimization Update and State ---
         arrays = [vt, ht, ft, vp, hp, fp]
         k = optimization_target.value
-        # --- Conditional Application of Optimization Update and State ---
-
         new_optim = arrays[k].at[sel].set(arrays[k][sel] + updates_sel)  # type: ignore
         arrays[k] = lax.cond(is_running, lambda: new_optim, lambda: arrays[k])  # type: ignore
-
         vt, ht, ft, vp, hp, fp = arrays
+
         # new_vt_optim = vt.at[sel].set(vt[sel] + updates_sel)
-        # vt = lax.cond(is_running and should_update_vt, lambda: new_vt_optim, lambda: vt)
+        # vt = lax.cond(is_running, lambda: new_vt_optim, lambda: vt)
 
         opt_state = lax.cond(is_running, lambda: new_opt_state, lambda: opt_state)
         stagnation_count = lax.cond(is_running, lambda: new_stagnation_count, lambda: stagnation_count)
@@ -231,19 +231,6 @@ def minimize(
     iterations_max = int(iterations_max)
     patience = int(patience)
 
-    # 1. Helper: Bind some fixed arguments to the loss function.
-    def loss_simple(vt, ht, ft, vp, hp, fp):
-        return L_in(
-            vt,
-            ht,
-            ft,
-            width,
-            height,
-            vp,
-            hp,
-            fp,
-        )
-
     return _jit_minimize(
         vertTable=vertTable,
         heTable=heTable,
@@ -256,7 +243,7 @@ def minimize(
         selected_faces=selected_faces,
         width=width,
         height=height,
-        L_in=loss_simple,
+        L_in=L_in,
         solver=solver,
         min_dist_T1=min_dist_T1,
         iterations_max=iterations_max,
@@ -516,7 +503,7 @@ def loss_ep_static(
     image_target,
     beta,
 ):
-    loss_inner = L_in(vertTable, heTable, faceTable, width, height, vert_params, he_params, face_params)
+    loss_inner = L_in(vertTable, heTable, faceTable, vert_params, he_params, face_params)
     loss_outer = L_out(
         vertTable,
         heTable,
@@ -532,6 +519,93 @@ def loss_ep_static(
         image_target,
     )
     return loss_inner + (beta * loss_outer)
+
+
+@partial(jit, static_argnums=(6, 10, 11, 17, 18, 19, 20, 21, 22, 23))
+def minimize_ep(
+    vertTable,
+    heTable,
+    faceTable,  # 0, 1, 2
+    vert_params,
+    he_params,
+    face_params,  # 3, 4, 5
+    loss_fn,  # 6 [STATIC]
+    vertTable_target,
+    heTable_target,
+    faceTable_target,  # 7, 8, 9
+    L_in,
+    L_out,  # 10, 11 [STATIC]
+    selected_verts,
+    selected_hes,
+    selected_faces,  # 12, 13, 14
+    image_target,
+    beta,  # 15, 16
+    solver,  # 17 [STATIC] <--- FIXED
+    min_dist_T1,  # 18
+    iterations_max=1000,
+    tolerance=1e-3,
+    patience=5,  # 19, 20, 21 [STATIC]
+    width=1,
+    height=1,
+):
+    # 1. Helper: Bind the fixed arguments to the loss function.
+    def loss_evaluated(vt, ht, ft, vp, hp, fp):
+        return loss_fn(
+            vt,
+            ht,
+            ft,
+            width,
+            height,
+            vp,
+            hp,
+            fp,
+            vertTable_target,
+            heTable_target,
+            faceTable_target,
+            L_in,
+            L_out,
+            selected_verts,
+            selected_hes,
+            selected_faces,
+            image_target,
+            beta,
+        )
+
+    # 2. Ensure static parameters are concrete integers
+    width = float(width)
+    height = float(height)
+    iterations_max = int(iterations_max)
+    patience = int(patience)
+    min_dist_T1 = float(min_dist_T1)
+    tolerance = float(tolerance)
+
+    selected_verts = jnp.arange(vertTable.shape[0]) if selected_verts is None else jnp.array(selected_verts)
+    selected_hes = jnp.arange(heTable.shape[0]) if selected_hes is None else jnp.array(selected_hes)
+    selected_faces = jnp.arange(faceTable.shape[0]) if selected_faces is None else jnp.array(selected_faces)
+
+    iterations_max = int(iterations_max)
+    patience = int(patience)
+
+    return _jit_minimize(
+        vertTable=vertTable,
+        heTable=heTable,
+        faceTable=faceTable,
+        vert_params=vert_params,
+        he_params=he_params,
+        face_params=face_params,
+        selected_verts=selected_verts,
+        selected_hes=selected_hes,
+        selected_faces=selected_faces,
+        width=width,
+        height=height,
+        L_in=loss_evaluated,
+        solver=solver,
+        min_dist_T1=min_dist_T1,
+        iterations_max=iterations_max,
+        tolerance=tolerance,
+        patience=patience,
+        optimization_target=OptimizationTarget.VERTICES,
+    )
 
 
 def inner_eq_prop(
@@ -559,57 +633,40 @@ def inner_eq_prop(
     iterations_max=1000,
     tolerance=1e-3,
     patience=5,
-    optimization_target: OptimizationTarget = OptimizationTarget.VERTICES,
 ):
-    """Wrapper to call the JIT-compiled minimize function and handle
+    """
+    Wrapper to call the JIT-compiled minimize function and handle
     post-processing (slicing history).
     """
-
-    # 1. Helper: Bind some fixed arguments to the loss function.
-    def loss_evaluated(vt, ht, ft, width, height, vp, hp, fp):
-        return loss_ep_static(
-            vt,
-            ht,
-            ft,
-            width,
-            height,
-            vp,
-            hp,
-            fp,
-            vertTable_target,
-            heTable_target,
-            faceTable_target,
-            L_in,
-            L_out,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-            image_target,
-            beta,
-        )
 
     # Call the JIT-compiled minimize function (defined in previous step)
     # We pass all targets and loss components so they can be bound
     # inside the static wrapper.
-    (vt_f, ht_f, ft_f, vp_f, hp_f, fp_f), (L_hist_full, step_f_array) = minimize(
+    (vt_f, ht_f, ft_f, vp_f, hp_f, fp_f), (L_hist_full, step_f_array) = minimize_ep(
         vertTable,
         heTable,
         faceTable,
-        width,
-        height,
         vert_params,
         he_params,
         face_params,
-        loss_evaluated,
+        loss_ep_static,
+        vertTable_target,
+        heTable_target,
+        faceTable_target,
+        L_in,
+        L_out,
+        selected_verts,
+        selected_hes,
+        selected_faces,
+        image_target,
+        beta,
         solver,
         min_dist_T1,
         iterations_max,
         tolerance,
         patience,
-        selected_verts,
-        selected_hes,
-        selected_faces,
-        optimization_target,
+        width,
+        height,
     )
 
     # Convert the JAX array step_f to a Python integer for slicing

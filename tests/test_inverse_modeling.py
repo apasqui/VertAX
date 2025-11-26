@@ -36,36 +36,6 @@ def test_inverse_modeling_for_regressions() -> None:
     epochs = 2
 
     MAX_EDGES_IN_ANY_FACE = 20
-
-    # Energy function
-    @partial(jit, static_argnums=(5, 6))
-    def area_part(face, face_param, vertTable, heTable, faceTable, width: float, height: float):
-        a = get_area(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
-        return (a - face_param) ** 2
-
-    @partial(jit, static_argnums=(5, 6))
-    def hedge_part(he, he_param, vertTable, heTable, faceTable, width: float, height: float):
-        edge_lengths = get_length(he, vertTable, heTable, faceTable, width, height)
-        return he_param * edge_lengths
-
-    @partial(jit, static_argnums=(3, 4))
-    def energy(vertTable, heTable, faceTable, width: float, height: float, vert_params, he_params, face_params):
-        K_areas = 20
-
-        def mapped_areas_part(face, face_param):
-            return area_part(face, face_param, vertTable, heTable, faceTable, width, height)
-
-        def mapped_hedges_part(he, he_param):
-            return hedge_part(he, he_param, vertTable, heTable, faceTable, width, height)
-
-        areas_part = vmap(mapped_areas_part)(jnp.arange(len(faceTable)), face_params)
-        hedges_part = vmap(mapped_hedges_part)(jnp.arange(2, len(heTable)), he_params[2:])
-        return (
-            (2 * he_params_reference * get_length(0, vertTable, heTable, faceTable, width, height))
-            + jnp.sum(hedges_part)
-            + (0.5 * K_areas) * jnp.sum(areas_part)
-        )
-
     # Initial condition (vertices)
     key = jax.random.PRNGKey(0)  # change the seed for different results
     L_box = jnp.sqrt(n_cells)
@@ -81,6 +51,35 @@ def test_inverse_modeling_for_regressions() -> None:
     he_params = jnp.repeat(he_params, 2)
     he_params_reference = he_params[0]
     face_params = jnp.asarray(mu_areas + std_areas * jax.random.normal(key, shape=(n_cells,)))
+
+    # Energy function
+    # @partial(jit, static_argnums=(5, 6))
+    def area_part(face, face_param, vertTable, heTable, faceTable, width: float, height: float):
+        a = get_area(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
+        return (a - face_param) ** 2
+
+    # @partial(jit, static_argnums=(5, 6))
+    def hedge_part(he, he_param, vertTable, heTable, faceTable, width: float, height: float):
+        edge_lengths = get_length(he, vertTable, heTable, faceTable, width, height)
+        return he_param * edge_lengths
+
+    # @partial(jit, static_argnums=(3, 4))
+    def energy(vertTable, heTable, faceTable, vert_params, he_params, face_params):
+        K_areas = 20
+
+        def mapped_areas_part(face, face_param):
+            return area_part(face, face_param, vertTable, heTable, faceTable, width, height)
+
+        def mapped_hedges_part(he, he_param):
+            return hedge_part(he, he_param, vertTable, heTable, faceTable, width, height)
+
+        areas_part = vmap(mapped_areas_part)(jnp.arange(len(faceTable)), face_params)
+        hedges_part = vmap(mapped_hedges_part)(jnp.arange(2, len(heTable)), he_params[2:])
+        return (
+            (2 * he_params_reference * get_length(0, vertTable, heTable, faceTable, width, height))
+            + jnp.sum(hedges_part)
+            + (0.5 * K_areas) * jnp.sum(areas_part)
+        )
 
     # Energy minimization (init cond equilibrium)
     (vertTable, heTable, faceTable), _ = inner_opt(
@@ -142,18 +141,18 @@ def test_inverse_modeling_for_regressions() -> None:
     fixed_areas_target = vmap(mapped_fixed_areas_target)(jnp.arange(len(faceTable)))
 
     # Redefined energy function (with fixed areas and fixed first tension equal to the target ones)
-    @partial(jit, static_argnums=(4, 5))
+    # @partial(jit, static_argnums=(4, 5))
     def area_part_v2(face, vertTable, heTable, faceTable, width, height):
         a = get_area(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
         return (a - fixed_areas_target[face]) ** 2
 
-    @partial(jit, static_argnums=(5, 6))
+    # @partial(jit, static_argnums=(5, 6))
     def hedge_part_v2(he, he_param, vertTable, heTable, faceTable, width: float, height: float):
         edge_lengths = get_length(he, vertTable, heTable, faceTable, width, height)
         return he_param * edge_lengths
 
-    @partial(jit, static_argnums=(3, 4))
-    def energy_v2(vertTable, heTable, faceTable, width: float, height: float, vert_params, he_params, face_params):
+    # @partial(jit, static_argnums=(3, 4))
+    def energy_v2(vertTable, heTable, faceTable, vert_params, he_params, face_params):
         K_areas = 20
 
         def mapped_areas_part(face):

@@ -30,22 +30,6 @@ def test_forward_modeling_for_regressions() -> None:
     tolerance = 1e-4
     patience = 5
 
-    MAX_EDGES_IN_ANY_FACE = 20
-
-    # Energy function
-    @partial(jit, static_argnums=(5, 6))
-    def cell_energy(face, face_param, vertTable, heTable, faceTable, width, height):
-        area = get_area(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
-        perimeter = get_perimeter(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
-        return ((area - 1) ** 2) + ((perimeter - face_param) ** 2)
-
-    @partial(jit, static_argnums=(3, 4))
-    def energy(vertTable, heTable, faceTable, width, height, vert_params, he_params, face_params):
-        mapped_fn = lambda face, param: cell_energy(face, param, vertTable, heTable, faceTable, width, height)
-        face_params_broadcasted = jnp.broadcast_to(face_params, (len(faceTable),))
-        cell_energies = vmap(mapped_fn)(jnp.arange(len(faceTable)), face_params_broadcasted)
-        return jnp.sum(cell_energies)
-
     # Initial condition
     key = jax.random.PRNGKey(1)
     L_box = jnp.sqrt(n_cells)
@@ -53,6 +37,22 @@ def test_forward_modeling_for_regressions() -> None:
     height = float(L_box)
     seeds = L_box * jax.random.uniform(key, (n_cells, 2))
     vertTable, heTable, faceTable = create_mesh_from_seeds(seeds)
+
+    MAX_EDGES_IN_ANY_FACE = 20
+
+    # Energy function
+    # @partial(jit, static_argnums=(5, 6))
+    def cell_energy(face, face_param, vertTable, heTable, faceTable):
+        area = get_area(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
+        perimeter = get_perimeter(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
+        return ((area - 1) ** 2) + ((perimeter - face_param) ** 2)
+
+    # @partial(jit, static_argnums=(3, 4))
+    def energy(vertTable, heTable, faceTable, vert_params, he_params, face_params):
+        mapped_fn = lambda face, param: cell_energy(face, param, vertTable, heTable, faceTable)
+        face_params_broadcasted = jnp.broadcast_to(face_params, (len(faceTable),))
+        cell_energies = vmap(mapped_fn)(jnp.arange(len(faceTable)), face_params_broadcasted)
+        return jnp.sum(cell_energies)
 
     # Energy minimization
     (vertTable_eq, heTable_eq, faceTable_eq), _ = inner_opt(
