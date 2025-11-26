@@ -247,17 +247,17 @@ def cost_mesh2image(
     vertTable: Array,
     heTable: Array,
     faceTable: Array,
-    selected_verts,
-    selected_hes,
-    selected_faces,
+    width: float,
+    height: float,
     vertTable_target,
     heTable_target,
     faceTable_target,
+    selected_verts,
+    selected_hes,
+    selected_faces,
     image_target,
-):
-    L_box = jnp.sqrt(len(faceTable))
-
-    starting = (vertTable[heTable[selected_hes, 3], :2]) * 2 / L_box  # (M, 2)
+) -> Array:
+    starting = (vertTable[heTable[selected_hes, 3], :2]) * 2 / [width, height]  # (M, 2)
     # ending = (vertTable[heTable[selected_hes, 4], :2]) * 2 / L_box  # (M, 2)
     ending = (
         (
@@ -269,10 +269,10 @@ def cost_mesh2image(
                 ],
                 axis=-1,
             )
-            * L_box
+            * [width, height]
         )
         * 2
-        / L_box
+        / [width, height]
     )
 
     he_edges = stack((starting, ending), axis=1)  # (N, 2, 2)
@@ -280,19 +280,6 @@ def cost_mesh2image(
 
     # Blur
     image = gaussian_blur_line_segments(x).real
-
-    # # Crop
-    # image = image[int(256/6):int(((256*2/6)*2)+(256/6)),int(256/6):int(((256*2/6)*2)+(256/6))]
-    # image_target = image_target[int(256/6):int(((256*2/6)*2)+(256/6)),int(256/6):int(((256*2/6)*2)+(256/6))]
-
-    # image = image[85:169,85:169]
-    image = image[50:210, 50:210]
-    # image_target = image_target[85:169,85:169]
-    image_target = image_target[50:210, 50:210]
-
-    # plt.imshow(image_target, cmap='gray', alpha=1.)
-    # plt.imshow(image, cmap='hot', alpha=0.5)
-    # plt.show()
 
     # Normalization
     image = image / image.sum()

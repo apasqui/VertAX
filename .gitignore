@@ -1,5 +1,5 @@
-simulation_init
-FINAL
+tests/other_tests
+vertax_final_alessandro
 edges.txt
 faces.txt
 refined_and_padded_image.tiff

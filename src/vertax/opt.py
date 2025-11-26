@@ -18,11 +18,9 @@ class OptimizationTarget(Enum):
     VERTICES = 0
     EDGES = 1
     FACES = 2
-    # width = 3
-    # height = 4
-    VERTEX_PARAMETERS = 5
-    EDGE_PARAMETERS = 6
-    FACE_PARAMETERS = 7
+    VERTEX_PARAMETERS = 3
+    EDGE_PARAMETERS = 4
+    FACE_PARAMETERS = 5
 
 
 ###############################
@@ -51,15 +49,11 @@ def _jit_minimize(
     patience=5,
     optimization_target: OptimizationTarget = OptimizationTarget.VERTICES,
 ):
-    x0: Array = [vertTable, heTable, faceTable, None, None, vert_params, he_params, face_params][
-        optimization_target.value
-    ]  # type: ignore
+    x0: Array = [vertTable, heTable, faceTable, vert_params, he_params, face_params][optimization_target.value]  # type: ignore
     sel: Array = [
         selected_verts,
         selected_hes,
         selected_faces,
-        None,
-        None,
         selected_verts,
         selected_hes,
         selected_faces,
@@ -71,8 +65,6 @@ def _jit_minimize(
         vertTable[selected_verts],
         heTable[selected_hes],
         faceTable[selected_faces],
-        width,
-        height,
         vert_params[selected_verts],
         he_params[selected_hes],
         face_params[selected_faces],
@@ -109,8 +101,6 @@ def _jit_minimize(
             vt[selected_verts],
             ht[selected_hes],
             ft[selected_faces],
-            width,
-            height,
             vp[selected_verts],
             hp[selected_hes],
             fp[selected_faces],
@@ -124,21 +114,21 @@ def _jit_minimize(
         new_should_stop = (new_stagnation_count >= patience) | (i >= iterations_max - 1)  # type: ignore
 
         # 3) Gradient wrt chosen argnums
-        grads = grad(L_in, argnums=optimization_target.value)(vt, ht, ft, width, height, vp, hp, fp)
+        grads = grad(L_in, argnums=optimization_target.value)(vt, ht, ft, vp, hp, fp)
 
         # 4) Optimizer update
         updates, new_opt_state = solver.update(grads, opt_state)
 
         # 5) Apply updates to the chosen array on selected indices
         updates_sel = updates.at[sel].get()
-        arrays = [vt, ht, ft, None, None, vp, hp, fp]
+        arrays = [vt, ht, ft, vp, hp, fp]
         k = optimization_target.value
         # --- Conditional Application of Optimization Update and State ---
 
         new_optim = arrays[k].at[sel].set(arrays[k][sel] + updates_sel)  # type: ignore
         arrays[k] = lax.cond(is_running, lambda: new_optim, lambda: arrays[k])  # type: ignore
 
-        vt, ht, ft, _, _, vp, hp, fp = arrays
+        vt, ht, ft, vp, hp, fp = arrays
         # new_vt_optim = vt.at[sel].set(vt[sel] + updates_sel)
         # vt = lax.cond(is_running and should_update_vt, lambda: new_vt_optim, lambda: vt)
 
@@ -240,6 +230,20 @@ def minimize(
 
     iterations_max = int(iterations_max)
     patience = int(patience)
+
+    # 1. Helper: Bind some fixed arguments to the loss function.
+    def loss_simple(vt, ht, ft, vp, hp, fp):
+        return L_in(
+            vt,
+            ht,
+            ft,
+            width,
+            height,
+            vp,
+            hp,
+            fp,
+        )
+
     return _jit_minimize(
         vertTable=vertTable,
         heTable=heTable,
@@ -252,7 +256,7 @@ def minimize(
         selected_faces=selected_faces,
         width=width,
         height=height,
-        L_in=L_in,
+        L_in=loss_simple,
         solver=solver,
         min_dist_T1=min_dist_T1,
         iterations_max=iterations_max,
@@ -492,7 +496,7 @@ def outer_opt(
 #############################
 
 
-def loss_ep(
+def loss_ep_static(
     vertTable,
     heTable,
     faceTable,
@@ -512,9 +516,8 @@ def loss_ep(
     image_target,
     beta,
 ):
-    loss_inner_value = L_in(vertTable, heTable, faceTable, width, height, vert_params, he_params, face_params)
-
-    loss_outer_value = L_out(
+    loss_inner = L_in(vertTable, heTable, faceTable, width, height, vert_params, he_params, face_params)
+    loss_outer = L_out(
         vertTable,
         heTable,
         faceTable,
@@ -528,39 +531,43 @@ def loss_ep(
         selected_faces,
         image_target,
     )
-
-    loss_ep_value = loss_inner_value + (beta * loss_outer_value)
-
-    return loss_ep_value
+    return loss_inner + (beta * loss_outer)
 
 
-def forward(
+def inner_eq_prop(
     vertTable,
     heTable,
     faceTable,
-    width: float,
-    height: float,
+    width,
+    height,
     vert_params,
     he_params,
     face_params,
+    loss_ep_static,
     vertTable_target,
     heTable_target,
     faceTable_target,
     L_in,
     L_out,
-    solver_inner,
-    min_dist_T1,
-    iterations_max,
-    tolerance,
-    patience,
     selected_verts,
     selected_hes,
     selected_faces,
     image_target,
     beta,
+    solver,
+    min_dist_T1,
+    iterations_max=1000,
+    tolerance=1e-3,
+    patience=5,
+    optimization_target: OptimizationTarget = OptimizationTarget.VERTICES,
 ):
-    def loss_ep_forward(vt, ht, ft, width, height, vp, hp, fp):
-        return loss_ep(
+    """Wrapper to call the JIT-compiled minimize function and handle
+    post-processing (slicing history).
+    """
+
+    # 1. Helper: Bind some fixed arguments to the loss function.
+    def loss_evaluated(vt, ht, ft, width, height, vp, hp, fp):
+        return loss_ep_static(
             vt,
             ht,
             ft,
@@ -581,6 +588,9 @@ def forward(
             beta,
         )
 
+    # Call the JIT-compiled minimize function (defined in previous step)
+    # We pass all targets and loss components so they can be bound
+    # inside the static wrapper.
     (vt_f, ht_f, ft_f, vp_f, hp_f, fp_f), (L_hist_full, step_f_array) = minimize(
         vertTable,
         heTable,
@@ -590,25 +600,25 @@ def forward(
         vert_params,
         he_params,
         face_params,
-        L_in=loss_ep_forward,
-        solver=solver_inner,
-        min_dist_T1=min_dist_T1,
-        iterations_max=iterations_max,
-        tolerance=tolerance,
-        patience=patience,
-        selected_verts=selected_verts,
-        selected_hes=selected_hes,
-        selected_faces=selected_faces,
-        optimization_target=OptimizationTarget.VERTICES,
+        loss_evaluated,
+        solver,
+        min_dist_T1,
+        iterations_max,
+        tolerance,
+        patience,
+        selected_verts,
+        selected_hes,
+        selected_faces,
+        optimization_target,
     )
 
-    # Convert the JAX array step_f to a Python integer
+    # Convert the JAX array step_f to a Python integer for slicing
     step_f = step_f_array.item()
 
-    # Now slice using standard Python/NumPy slicing
+    # Slice the loss history to remove padding zeros
     final_L_list = L_hist_full[:step_f]
 
-    # Return updated arrays and loss history
+    # Return updated geometry and the valid loss history
     return (vt_f, ht_f, ft_f), final_L_list
 
 
@@ -616,8 +626,8 @@ def outer_eq_prop(
     vertTable,
     heTable,
     faceTable,
-    width: float,
-    height: float,
+    width,
+    height,
     vert_params,
     he_params,
     face_params,
@@ -638,7 +648,7 @@ def outer_eq_prop(
     image_target,
     beta,
 ):
-    (vertTable_free, heTable_free, faceTable_free), _ = forward(
+    (vertTable_free, heTable_free, faceTable_free), _ = inner_eq_prop(
         vertTable,
         heTable,
         faceTable,
@@ -647,24 +657,25 @@ def outer_eq_prop(
         vert_params,
         he_params,
         face_params,
+        loss_ep_static,
         vertTable_target,
         heTable_target,
         faceTable_target,
         L_in,
         L_out,
+        selected_verts,
+        selected_hes,
+        selected_faces,
+        image_target,
+        -beta,
         solver_inner,
         min_dist_T1,
         iterations_max,
         tolerance,
         patience,
-        selected_verts,
-        selected_hes,
-        selected_faces,
-        image_target,
-        beta=0.0,
     )
 
-    (vertTable_nudged, heTable_nudged, faceTable_nudged), _ = forward(
+    (vertTable_nudged, heTable_nudged, faceTable_nudged), _ = inner_eq_prop(
         vertTable,
         heTable,
         faceTable,
@@ -673,24 +684,25 @@ def outer_eq_prop(
         vert_params,
         he_params,
         face_params,
+        loss_ep_static,
         vertTable_target,
         heTable_target,
         faceTable_target,
         L_in,
         L_out,
+        selected_verts,
+        selected_hes,
+        selected_faces,
+        image_target,
+        beta,
         solver_inner,
         min_dist_T1,
         iterations_max,
         tolerance,
         patience,
-        selected_verts,
-        selected_hes,
-        selected_faces,
-        image_target,
-        beta,
     )
 
-    grad_loss_ep_free_verts = grad(loss_ep, argnums=5)(
+    grad_loss_ep_free_verts = grad(loss_ep_static, argnums=5)(
         vertTable_free,
         heTable_free,
         faceTable_free,
@@ -708,10 +720,10 @@ def outer_eq_prop(
         selected_hes,
         selected_faces,
         image_target,
-        beta=0.0,
+        beta=-beta,
     )
 
-    grad_loss_ep_nudged_verts = grad(loss_ep, argnums=5)(
+    grad_loss_ep_nudged_verts = grad(loss_ep_static, argnums=5)(
         vertTable_nudged,
         heTable_nudged,
         faceTable_nudged,
@@ -732,7 +744,7 @@ def outer_eq_prop(
         beta,
     )
 
-    grad_loss_ep_free_hes = grad(loss_ep, argnums=6)(
+    grad_loss_ep_free_hes = grad(loss_ep_static, argnums=6)(
         vertTable_free,
         heTable_free,
         faceTable_free,
@@ -750,10 +762,10 @@ def outer_eq_prop(
         selected_hes,
         selected_faces,
         image_target,
-        beta=0.0,
+        beta=-beta,
     )
 
-    grad_loss_ep_nudged_hes = grad(loss_ep, argnums=6)(
+    grad_loss_ep_nudged_hes = grad(loss_ep_static, argnums=6)(
         vertTable_nudged,
         heTable_nudged,
         faceTable_nudged,
@@ -774,7 +786,7 @@ def outer_eq_prop(
         beta,
     )
 
-    grad_loss_ep_free_faces = grad(loss_ep, argnums=7)(
+    grad_loss_ep_free_faces = grad(loss_ep_static, argnums=7)(
         vertTable_free,
         heTable_free,
         faceTable_free,
@@ -792,10 +804,10 @@ def outer_eq_prop(
         selected_hes,
         selected_faces,
         image_target,
-        beta=0.0,
+        beta=-beta,
     )
 
-    grad_loss_ep_nudged_faces = grad(loss_ep, argnums=7)(
+    grad_loss_ep_nudged_faces = grad(loss_ep_static, argnums=7)(
         vertTable_nudged,
         heTable_nudged,
         faceTable_nudged,
@@ -816,20 +828,20 @@ def outer_eq_prop(
         beta,
     )
 
-    grad_verts = (1.0 / beta) * ((grad_loss_ep_nudged_verts) - (grad_loss_ep_free_verts))
-    grad_hes = (1.0 / beta) * ((grad_loss_ep_nudged_hes) - (grad_loss_ep_free_hes))
-    grad_faces = (1.0 / beta) * ((grad_loss_ep_nudged_faces) - (grad_loss_ep_free_faces))
+    grad_verts = (1.0 / (2 * beta)) * ((grad_loss_ep_nudged_verts) - (grad_loss_ep_free_verts))
+    grad_hes = (1.0 / (2 * beta)) * ((grad_loss_ep_nudged_hes) - (grad_loss_ep_free_hes))
+    grad_faces = (1.0 / (2 * beta)) * ((grad_loss_ep_nudged_faces) - (grad_loss_ep_free_faces))
 
     params = {"vert_params": vert_params, "he_params": he_params, "face_params": face_params}
     grads = {"vert_params": grad_verts, "he_params": grad_hes, "face_params": grad_faces}
     opt_state = solver_outer.init(params)
     updates, opt_state = solver_outer.update(grads, opt_state, params)
     updated_params = optax.apply_updates(params, updates)
-    new_vert_params: Array = updated_params["vert_params"]  # type: ignore
-    new_he_params: Array = updated_params["he_params"]  # type: ignore
-    new_face_params: Array = updated_params["face_params"]  # type: ignore
+    vert_params = updated_params["vert_params"]  # type: ignore
+    he_params = updated_params["he_params"]  # type: ignore
+    face_params = updated_params["face_params"]  # type: ignore
 
-    return new_vert_params, new_he_params, new_face_params
+    return vert_params, he_params, face_params
 
 
 ###########################
