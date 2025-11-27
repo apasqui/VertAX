@@ -231,25 +231,27 @@ def minimize(
     iterations_max = int(iterations_max)
     patience = int(patience)
 
-    return _jit_minimize(
-        vertTable=vertTable,
-        heTable=heTable,
-        faceTable=faceTable,
-        vert_params=vert_params,
-        he_params=he_params,
-        face_params=face_params,
-        selected_verts=selected_verts,
-        selected_hes=selected_hes,
-        selected_faces=selected_faces,
-        width=width,
-        height=height,
-        L_in=L_in,
-        solver=solver,
-        min_dist_T1=min_dist_T1,
-        iterations_max=iterations_max,
-        tolerance=tolerance,
-        patience=patience,
-        optimization_target=optimization_target,
+    return jax.block_until_ready(
+        _jit_minimize(
+            vertTable=vertTable,
+            heTable=heTable,
+            faceTable=faceTable,
+            vert_params=vert_params,
+            he_params=he_params,
+            face_params=face_params,
+            selected_verts=selected_verts,
+            selected_hes=selected_hes,
+            selected_faces=selected_faces,
+            width=width,
+            height=height,
+            L_in=L_in,
+            solver=solver,
+            min_dist_T1=min_dist_T1,
+            iterations_max=iterations_max,
+            tolerance=tolerance,
+            patience=patience,
+            optimization_target=optimization_target,
+        )
     )
 
 
