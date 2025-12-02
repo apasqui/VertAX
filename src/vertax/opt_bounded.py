@@ -1,42 +1,84 @@
 """Optimization methods for VertAX (bounded version)."""
 
+from collections.abc import Callable
 from functools import partial
 
 import jax
 import jax.numpy as jnp
 import optax
-from jax import grad, jacfwd, jit, lax
+from jax import Array, grad, jacfwd, jit, lax
 
 from vertax.topo import update_T1_bounded
 
-# ==========
-# Bounded
-# ==========
+type InnerLossFunction = Callable[
+    [Array, Array, Array, Array, Array | None, Array | None, Array | None, Array, Array, Array], Array
+]
+type OuterLossFunction = Callable[
+    [
+        Array,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+    ],
+    Array,
+]
+
+type LossEPFunction = Callable[
+    [
+        Array,
+        Array,
+        Array,
+        Array,
+        Array,
+        Array,
+        Array,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+        InnerLossFunction,
+        OuterLossFunction,
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
+        float,
+    ],
+    Array,
+]
 ###############################
 ## AUTOMATIC DIFFERENTIATION ##
 ###############################
 
 
 @partial(jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16))
-def minimize_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    L_in,
-    solver,
-    min_dist_T1,
-    iterations_max=1e3,
-    tolerance=1e-4,
-    patience=5,
-    selected_verts=None,
-    selected_hes=None,
-    selected_faces=None,
-    argnums=0,
-):
+def _minimize_bounded(  # noqa: C901
+    vertTable: Array,
+    angTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
+    L_in: InnerLossFunction,
+    solver: optax.GradientTransformation,
+    min_dist_T1: float,
+    iterations_max: int = 1000,
+    tolerance: float = 1e-4,
+    patience: int = 5,
+    selected_verts: Array | None = None,
+    selected_hes: Array | None = None,
+    selected_faces: Array | None = None,
+    argnums: int = 0,
+) -> tuple[tuple[Array, Array, Array, Array, Array, Array, Array], tuple[Array, Array]]:
     if selected_verts is None:
         selected_verts = jnp.arange(vertTable.shape[0])
     if selected_hes is None:
@@ -61,15 +103,17 @@ def minimize_bounded(
     elif argnums == 6:
         x0, sel = face_params, selected_faces
     else:
-        raise ValueError("argnums must be in {0,2,3,4,5,6}")
+        msg = "argnums must be in {0,2,3,4,5,6}"
+        raise ValueError(msg)
 
     # --- check if the target is float-type before differentiating ---
     if not jnp.issubdtype(x0.dtype, jnp.floating):
-        raise TypeError(
+        msg = (
             f"Cannot differentiate argnums={argnums}: "
             f"target array has dtype {x0.dtype}. "
             f"Use a float array (vertTable, vert_params, he_params, face_params) only."
         )
+        raise TypeError(msg)
 
     jacnums = argnums
     if argnums == 0:
@@ -98,7 +142,9 @@ def minimize_bounded(
     should_stop = jnp.array(False)
 
     @jit
-    def scan_step(carry, i):
+    def scan_step(
+        carry: tuple[Array, Array, Array, Array, Array, Array, Array, Array, Array, Array, int, Array, Array], i: int
+    ) -> tuple[tuple[Array, Array, Array, Array, Array, Array, Array, Array, Array, Array, int, Array, Array], None]:
         vt, at, ht, ft, vp, hp, fp, opt_state, prev_L_values, stagnation_count, step_count, should_stop, L_list = carry
 
         is_running = jnp.logical_not(should_stop)
@@ -120,24 +166,24 @@ def minimize_bounded(
 
         # Apply updates to the chosen array on selected indices
         if argnums == 0:
-            new_vt = vt.at[sel].set(vt[sel] + updates[0].at[sel].get())
-            new_at = at + updates[1]
+            new_vt = vt.at[sel].set(vt[sel] + updates[0].at[sel].get())  # type: ignore
+            new_at = at + updates[1]  # type: ignore
             vt = lax.cond(is_running, lambda: new_vt, lambda: vt)
             at = lax.cond(is_running, lambda: new_at, lambda: at)
         elif argnums == 1:
             new_ht = ht.at[sel].set(ht[sel] + updates.at[sel].get())
             ht = lax.cond(is_running, lambda: new_ht, lambda: ht)
         elif argnums == 2:
-            new_ft = ft.at[sel].set(ft[sel] + updates.at[sel].get())
+            new_ft = ft.at[sel].set(ft[sel] + updates.at[sel].get())  # type: ignore
             ft = lax.cond(is_running, lambda: new_ft, lambda: ft)
         elif argnums == 3:
-            new_vp = vp.at[sel].set(vp[sel] + updates.at[sel].get())
+            new_vp = vp.at[sel].set(vp[sel] + updates.at[sel].get())  # type: ignore
             vp = lax.cond(is_running, lambda: new_vp, lambda: vp)
         elif argnums == 4:
-            new_hp = hp.at[sel].set(hp[sel] + updates.at[sel].get())
+            new_hp = hp.at[sel].set(hp[sel] + updates.at[sel].get())  # type: ignore
             hp = lax.cond(is_running, lambda: new_hp, lambda: hp)
         elif argnums == 5:
-            new_fp = fp.at[sel].set(fp[sel] + updates.at[sel].get())
+            new_fp = fp.at[sel].set(fp[sel] + updates.at[sel].get())  # type: ignore
             fp = lax.cond(is_running, lambda: new_fp, lambda: fp)
 
         opt_state = lax.cond(is_running, lambda: new_opt_state, lambda: opt_state)
@@ -202,25 +248,26 @@ def minimize_bounded(
 
 
 def inner_opt_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    L_in,
-    solver,
-    min_dist_T1,
-    iterations_max=1e3,
-    tolerance=1e-4,
-    patience=5,
-    selected_verts=None,
-    selected_hes=None,
-    selected_faces=None,
-):
+    vertTable: Array,
+    angTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
+    L_in: InnerLossFunction,
+    solver: optax.GradientTransformation,
+    min_dist_T1: float,
+    iterations_max: int = 1000,
+    tolerance: float = 1e-4,
+    patience: int = 5,
+    selected_verts: Array | None = None,
+    selected_hes: Array | None = None,
+    selected_faces: Array | None = None,
+) -> tuple[tuple[Array, Array, Array, Array], Array]:
+    """Inner optimization for a bounded mesh."""
     # Use the general minimize function with argnums=0 (optimize vertTable)
-    (vt_f, at_f, ht_f, ft_f, vp_f, hp_f, fp_f), (L_hist_full, step_f_array) = minimize_bounded(
+    (vt_f, at_f, ht_f, ft_f, _vp_f, _hp_f, _fp_f), (L_hist_full, step_f_array) = _minimize_bounded(
         vertTable,
         angTable,
         heTable,
@@ -249,30 +296,31 @@ def inner_opt_bounded(
 
 
 def cost_ad_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    vertTable_target,
-    angTable_target,
-    heTable_target,
-    faceTable_target,
-    L_in,
-    L_out,
-    solver_inner,
-    min_dist_T1,
-    iterations_max=1e3,
-    tolerance=1e-4,
-    patience=5,
-    selected_verts=None,
-    selected_hes=None,
-    selected_faces=None,
-    image_target=None,
-):
-    (vertTable, angTable, heTable, faceTable), L_in = inner_opt_bounded(
+    vertTable: Array,
+    angTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
+    vertTable_target: Array | None,
+    angTable_target: Array | None,
+    heTable_target: Array | None,
+    faceTable_target: Array | None,
+    L_in: InnerLossFunction,
+    L_out: OuterLossFunction,
+    solver_inner: optax.GradientTransformation,
+    min_dist_T1: float,
+    iterations_max: int = 1000,
+    tolerance: float = 1e-4,
+    patience: int = 5,
+    selected_verts: Array | None = None,
+    selected_hes: Array | None = None,
+    selected_faces: Array | None = None,
+    image_target: Array | None = None,
+) -> Array:
+    """Automatic differentiation cost function."""
+    (vertTable, angTable, heTable, faceTable), _ = inner_opt_bounded(
         vertTable,
         angTable,
         heTable,
@@ -310,30 +358,31 @@ def cost_ad_bounded(
 
 
 def outer_opt_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    vertTable_target,
-    angTable_target,
-    heTable_target,
-    faceTable_target,
-    L_in,
-    L_out,
-    solver_inner,
-    solver_outer,
-    min_dist_T1,
-    iterations_max,
-    tolerance,
-    patience,
-    selected_verts,
-    selected_hes,
-    selected_faces,
-    image_target,
-):
+    vertTable: Array,
+    angTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
+    vertTable_target: Array | None,
+    angTable_target: Array | None,
+    heTable_target: Array | None,
+    faceTable_target: Array | None,
+    L_in: InnerLossFunction,
+    L_out: OuterLossFunction,
+    solver_inner: optax.GradientTransformation,
+    solver_outer: optax.GradientTransformation,
+    min_dist_T1: float,
+    iterations_max: int = 1000,
+    tolerance: float = 1e-4,
+    patience: int = 5,
+    selected_verts: Array | None = None,
+    selected_hes: Array | None = None,
+    selected_faces: Array | None = None,
+    image_target: Array | None = None,
+) -> tuple[Array, Array, Array]:
+    """Outer optimization for a bounded mesh."""
     grad_verts = grad(cost_ad_bounded, argnums=4)(
         vertTable,
         angTable,
@@ -426,26 +475,26 @@ def outer_opt_bounded(
 #############################
 
 
-def loss_ep_static_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    vertTable_target,
-    angTable_target,
-    heTable_target,
-    faceTable_target,
-    L_in,
-    L_out,
-    selected_verts,
-    selected_hes,
-    selected_faces,
-    image_target,
-    beta,
-):
+def _loss_ep_static_bounded(
+    vertTable: Array,
+    angTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
+    vertTable_target: Array | None,
+    angTable_target: Array | None,
+    heTable_target: Array | None,
+    faceTable_target: Array | None,
+    L_in: InnerLossFunction,
+    L_out: OuterLossFunction,
+    selected_verts: Array | None,
+    selected_hes: Array | None,
+    selected_faces: Array | None,
+    image_target: Array | None,
+    beta: float,
+) -> Array:
     loss_inner_value = L_in(
         vertTable,
         angTable,
@@ -478,34 +527,34 @@ def loss_ep_static_bounded(
 
 
 @partial(jit, static_argnums=(7, 12, 13, 14, 16, 17, 18, 24))
-def minimize_ep_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    loss_fn,
-    vertTable_target,
-    angTable_target,
-    heTable_target,
-    faceTable_target,
-    L_in,
-    L_out,
-    solver,
-    min_dist_T1,
-    iterations_max=1e3,
-    tolerance=1e-4,
-    patience=5,
-    selected_verts=None,
-    selected_hes=None,
-    selected_faces=None,
-    image_target=None,
-    beta=0.001,
-    argnums=0,
-):
-    def loss_evaluated(vt, at, ht, ft, vp, hp, fp):
+def _minimize_ep_bounded(  # noqa: C901
+    vertTable: Array,
+    angTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
+    loss_fn: LossEPFunction,
+    vertTable_target: Array | None,
+    angTable_target: Array | None,
+    heTable_target: Array | None,
+    faceTable_target: Array | None,
+    L_in: InnerLossFunction,
+    L_out: OuterLossFunction,
+    solver: optax.GradientTransformation,
+    min_dist_T1: float,
+    iterations_max: int = 1000,
+    tolerance: float = 1e-4,
+    patience: int = 5,
+    selected_verts: Array | None = None,
+    selected_hes: Array | None = None,
+    selected_faces: Array | None = None,
+    image_target: Array | None = None,
+    beta: float = 0.001,
+    argnums: int = 0,
+) -> tuple[tuple[Array, Array, Array, Array, Array, Array, Array], tuple[Array, Array]]:
+    def loss_evaluated(vt: Array, at: Array, ht: Array, ft: Array, vp: Array, hp: Array, fp: Array) -> Array:
         return loss_fn(
             vt,
             at,
@@ -551,15 +600,17 @@ def minimize_ep_bounded(
     elif argnums == 6:
         x0, sel = face_params, selected_faces
     else:
-        raise ValueError("argnums must be in {0,2,3,4,5,6}")
+        msg = "argnums must be in {0,2,3,4,5,6}"
+        raise ValueError(msg)
 
     # --- check if the target is float-type before differentiating ---
     if not jnp.issubdtype(x0.dtype, jnp.floating):
-        raise TypeError(
+        msg = (
             f"Cannot differentiate argnums={argnums}: "
             f"target array has dtype {x0.dtype}. "
             f"Use a float array (vertTable, vert_params, he_params, face_params) only."
         )
+        raise TypeError(msg)
 
     jacnums = argnums
     if argnums == 0:
@@ -577,7 +628,9 @@ def minimize_ep_bounded(
     should_stop = jnp.array(False)
 
     @jit
-    def scan_step(carry, i):
+    def scan_step(
+        carry: tuple[Array, Array, Array, Array, Array, Array, Array, Array, Array, Array, int, Array, Array], i: int
+    ) -> tuple[tuple[Array, Array, Array, Array, Array, Array, Array, Array, Array, Array, int, Array, Array], None]:
         vt, at, ht, ft, vp, hp, fp, opt_state, prev_L_values, stagnation_count, step_count, should_stop, L_list = carry
 
         is_running = jnp.logical_not(should_stop)
@@ -599,24 +652,24 @@ def minimize_ep_bounded(
 
         # Apply updates to the chosen array on selected indices
         if argnums == 0:
-            new_vt = vt.at[sel].set(vt[sel] + updates[0].at[sel].get())
-            new_at = at + updates[1]
+            new_vt = vt.at[sel].set(vt[sel] + updates[0].at[sel].get())  # type: ignore
+            new_at = at + updates[1]  # type: ignore
             vt = lax.cond(is_running, lambda: new_vt, lambda: vt)
             at = lax.cond(is_running, lambda: new_at, lambda: at)
         elif argnums == 1:
             new_ht = ht.at[sel].set(ht[sel] + updates.at[sel].get())
             ht = lax.cond(is_running, lambda: new_ht, lambda: ht)
         elif argnums == 2:
-            new_ft = ft.at[sel].set(ft[sel] + updates.at[sel].get())
+            new_ft = ft.at[sel].set(ft[sel] + updates.at[sel].get())  # type: ignore
             ft = lax.cond(is_running, lambda: new_ft, lambda: ft)
         elif argnums == 3:
-            new_vp = vp.at[sel].set(vp[sel] + updates.at[sel].get())
+            new_vp = vp.at[sel].set(vp[sel] + updates.at[sel].get())  # type: ignore
             vp = lax.cond(is_running, lambda: new_vp, lambda: vp)
         elif argnums == 4:
-            new_hp = hp.at[sel].set(hp[sel] + updates.at[sel].get())
+            new_hp = hp.at[sel].set(hp[sel] + updates.at[sel].get())  # type: ignore
             hp = lax.cond(is_running, lambda: new_hp, lambda: hp)
         elif argnums == 5:
-            new_fp = fp.at[sel].set(fp[sel] + updates.at[sel].get())
+            new_fp = fp.at[sel].set(fp[sel] + updates.at[sel].get())  # type: ignore
             fp = lax.cond(is_running, lambda: new_fp, lambda: fp)
 
         opt_state = lax.cond(is_running, lambda: new_opt_state, lambda: opt_state)
@@ -681,32 +734,33 @@ def minimize_ep_bounded(
 
 
 def inner_eq_prop_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    loss_ep_static_bounded,
-    vertTable_target,
-    angTable_target,
-    heTable_target,
-    faceTable_target,
-    L_in,
-    L_out,
-    solver_inner,
-    min_dist_T1,
-    iterations_max,
-    tolerance,
-    patience,
-    selected_verts,
-    selected_hes,
-    selected_faces,
-    image_target,
-    beta,
-):
-    (vt_f, at_f, ht_f, ft_f, vp_f, hp_f, fp_f), (L_hist_full, step_f_array) = minimize_ep_bounded(
+    vertTable: Array,
+    angTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
+    loss_ep_static_bounded: LossEPFunction,
+    vertTable_target: Array | None,
+    angTable_target: Array | None,
+    heTable_target: Array | None,
+    faceTable_target: Array | None,
+    L_in: InnerLossFunction,
+    L_out: OuterLossFunction,
+    solver_inner: optax.GradientTransformation,
+    min_dist_T1: float,
+    iterations_max: int,
+    tolerance: float,
+    patience: int,
+    selected_verts: Array | None,
+    selected_hes: Array | None,
+    selected_faces: Array | None,
+    image_target: Array | None,
+    beta: float,
+) -> tuple[tuple[Array, Array, Array, Array], Array]:
+    """Inner optimization function for equilibrium propagation only and bounded meshes."""
+    (vt_f, at_f, ht_f, ft_f, _vp_f, _hp_f, _fp_f), (L_hist_full, step_f_array) = _minimize_ep_bounded(
         vertTable,
         angTable,
         heTable,
@@ -740,32 +794,33 @@ def inner_eq_prop_bounded(
 
 
 def outer_eq_prop_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    vertTable_target,
-    angTable_target,
-    heTable_target,
-    faceTable_target,
-    L_in,
-    L_out,
-    solver_inner,
-    solver_outer,
-    min_dist_T1,
-    iterations_max,
-    tolerance,
-    patience,
-    selected_verts,
-    selected_hes,
-    selected_faces,
-    image_target,
-    beta,
-):
-    (vertTable_free, angTable_free, heTable_free, faceTable_free), loss_free = inner_eq_prop_bounded(
+    vertTable: Array,
+    angTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
+    vertTable_target: Array | None,
+    angTable_target: Array | None,
+    heTable_target: Array | None,
+    faceTable_target: Array | None,
+    L_in: InnerLossFunction,
+    L_out: OuterLossFunction,
+    solver_inner: optax.GradientTransformation,
+    solver_outer: optax.GradientTransformation,
+    min_dist_T1: float,
+    iterations_max: int,
+    tolerance: float,
+    patience: int,
+    selected_verts: Array | None,
+    selected_hes: Array | None,
+    selected_faces: Array | None,
+    image_target: Array | None,
+    beta: float,
+) -> tuple[Array, Array, Array]:
+    """Outer optimization for equilibrium propagation."""
+    (vertTable_free, angTable_free, heTable_free, faceTable_free), _loss_free = inner_eq_prop_bounded(
         vertTable,
         angTable,
         heTable,
@@ -773,7 +828,7 @@ def outer_eq_prop_bounded(
         vert_params,
         he_params,
         face_params,
-        loss_ep_static_bounded,
+        _loss_ep_static_bounded,
         vertTable_target,
         angTable_target,
         heTable_target,
@@ -792,7 +847,7 @@ def outer_eq_prop_bounded(
         beta=0.0,
     )
 
-    (vertTable_nudged, angTable_nudged, heTable_nudged, faceTable_nudged), loss_nudged = inner_eq_prop_bounded(
+    (vertTable_nudged, angTable_nudged, heTable_nudged, faceTable_nudged), _loss_nudged = inner_eq_prop_bounded(
         vertTable,
         angTable,
         heTable,
@@ -800,7 +855,7 @@ def outer_eq_prop_bounded(
         vert_params,
         he_params,
         face_params,
-        loss_ep_static_bounded,
+        _loss_ep_static_bounded,
         vertTable_target,
         angTable_target,
         heTable_target,
@@ -819,7 +874,7 @@ def outer_eq_prop_bounded(
         beta,
     )
 
-    grad_loss_ep_free_verts = grad(loss_ep_static_bounded, argnums=4)(
+    grad_loss_ep_free_verts = grad(_loss_ep_static_bounded, argnums=4)(
         vertTable_free,
         angTable_free,
         heTable_free,
@@ -840,7 +895,7 @@ def outer_eq_prop_bounded(
         beta=0.0,
     )
 
-    grad_loss_ep_nudged_verts = grad(loss_ep_static_bounded, argnums=4)(
+    grad_loss_ep_nudged_verts = grad(_loss_ep_static_bounded, argnums=4)(
         vertTable_nudged,
         angTable_nudged,
         heTable_nudged,
@@ -861,7 +916,7 @@ def outer_eq_prop_bounded(
         beta,
     )
 
-    grad_loss_ep_free_hes = grad(loss_ep_static_bounded, argnums=5)(
+    grad_loss_ep_free_hes = grad(_loss_ep_static_bounded, argnums=5)(
         vertTable_free,
         angTable_free,
         heTable_free,
@@ -882,7 +937,7 @@ def outer_eq_prop_bounded(
         beta=0.0,
     )
 
-    grad_loss_ep_nudged_hes = grad(loss_ep_static_bounded, argnums=5)(
+    grad_loss_ep_nudged_hes = grad(_loss_ep_static_bounded, argnums=5)(
         vertTable_nudged,
         angTable_nudged,
         heTable_nudged,
@@ -903,7 +958,7 @@ def outer_eq_prop_bounded(
         beta,
     )
 
-    grad_loss_ep_free_faces = grad(loss_ep_static_bounded, argnums=6)(
+    grad_loss_ep_free_faces = grad(_loss_ep_static_bounded, argnums=6)(
         vertTable_free,
         angTable_free,
         heTable_free,
@@ -924,7 +979,7 @@ def outer_eq_prop_bounded(
         beta=0.0,
     )
 
-    grad_loss_ep_nudged_faces = grad(loss_ep_static_bounded, argnums=6)(
+    grad_loss_ep_nudged_faces = grad(_loss_ep_static_bounded, argnums=6)(
         vertTable_nudged,
         angTable_nudged,
         heTable_nudged,
@@ -967,31 +1022,40 @@ def outer_eq_prop_bounded(
 
 
 def outer_implicit_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    vertTable_target,
-    angTable_target,
-    heTable_target,
-    faceTable_target,
-    L_in,
-    L_out,
-    solver_inner,
-    solver_outer,
-    min_dist_T1,
-    iterations_max,
-    tolerance,
-    patience,
-    selected_verts,
-    selected_hes,
-    selected_faces,
-    image_target,
-):
-    def L_in_flatten(vertangTable_flatten, heTable, faceTable, vert_params, he_params, face_params):
+    vertTable: Array,
+    angTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
+    vertTable_target: Array | None,
+    angTable_target: Array | None,
+    heTable_target: Array | None,
+    faceTable_target: Array | None,
+    L_in: InnerLossFunction,
+    L_out: OuterLossFunction,
+    solver_inner: optax.GradientTransformation,
+    solver_outer: optax.GradientTransformation,
+    min_dist_T1: float,
+    iterations_max: int,
+    tolerance: float,
+    patience: int,
+    selected_verts: Array | None,
+    selected_hes: Array | None,
+    selected_faces: Array | None,
+    image_target: Array | None,
+) -> tuple[Array, Array, Array]:
+    """Outer optimization for implicit differentiation method."""
+
+    def L_in_flatten(  # noqa: N802
+        vertangTable_flatten: Array,
+        heTable: Array,
+        faceTable: Array,
+        vert_params: Array,
+        he_params: Array,
+        face_params: Array,
+    ) -> Array:
         vertTable_tmp = vertangTable_flatten[: -heTable.shape[0] // 2].reshape(
             (len(vertangTable_flatten) - heTable.shape[0] // 2) // 2, 2
         )
@@ -1009,7 +1073,7 @@ def outer_implicit_bounded(
             face_params,
         )
 
-    (vertTable_eq, angTable_eq, heTable_eq, faceTable_eq), L_in_value = inner_opt_bounded(
+    (vertTable_eq, angTable_eq, heTable_eq, faceTable_eq), _L_in_value = inner_opt_bounded(
         vertTable,
         angTable,
         heTable,
@@ -1163,32 +1227,33 @@ def outer_implicit_bounded(
 
 
 def bilevel_opt_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    vertTable_target,
-    angTable_target,
-    heTable_target,
-    faceTable_target,
-    L_in,
-    L_out,
-    solver_inner,
-    solver_outer,
-    min_dist_T1,
-    iterations_max,
-    tolerance,
-    patience,
-    selected_verts,
-    selected_hes,
-    selected_faces,
-    image_target=None,
-    beta=None,
-    method="ad",
-):
+    vertTable: Array,
+    angTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
+    vertTable_target: Array | None,
+    angTable_target: Array | None,
+    heTable_target: Array | None,
+    faceTable_target: Array | None,
+    L_in: InnerLossFunction,
+    L_out: OuterLossFunction,
+    solver_inner: optax.GradientTransformation,
+    solver_outer: optax.GradientTransformation,
+    min_dist_T1: float,
+    iterations_max: int,
+    tolerance: float,
+    patience: int,
+    selected_verts: Array | None,
+    selected_hes: Array | None,
+    selected_faces: Array | None,
+    image_target: Array | None,
+    beta: float = 0.001,
+    method: str = "ad",
+) -> tuple[tuple[Array, Array, Array, Array, Array, Array, Array], Array]:
+    """Bilevel optimization for bounded meshes."""
     if method == "ad":
         vert_params, he_params, face_params = outer_opt_bounded(
             vertTable,

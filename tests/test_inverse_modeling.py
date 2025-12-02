@@ -1,12 +1,11 @@
 """Test the whole pipeline of bilevel optimization."""
 
-from functools import partial
 from time import perf_counter
 
 import jax.numpy as jnp
 import jax.random
 import optax
-from jax import jit, vmap
+from jax import vmap
 from numpy.testing import assert_allclose
 
 from vertax.cost import cost_v2v
@@ -187,10 +186,6 @@ def test_inverse_modeling_for_regressions() -> None:
                     vertTable_target,
                     heTable_target,
                     faceTable_target,
-                    selected_verts=None,
-                    selected_hes=None,
-                    selected_faces=None,
-                    image_target=None,
                 )
             )
         )

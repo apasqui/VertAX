@@ -94,7 +94,7 @@ for j in range(epochs + 1):
         selected_hes=None,
         selected_faces=None,
         image_target=None,
-        beta=None,
+        beta=0,
         method="ad",
     )
 

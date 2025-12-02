@@ -12,7 +12,7 @@ from jax import Array
 from vertax.opt import BilevelOptimizationMethod, bilevel_opt, inner_opt
 
 T = TypeVar("T")
-type InnerLossFunction = Callable[[Array, Array, Array, float, float, Array, Array, Array], float]
+type InnerLossFunction = Callable[[Array, Array, Array, Array, Array, Array], Array]
 type OuterLossFunction = Callable[
     [
         Array,
@@ -107,7 +107,51 @@ class Mesh(metaclass=NoPublicConstructor):
             Mesh: the mesh loaded from the .npz file.
         """
         mesh_file = np.load(path)
-        return cls(mesh_file["vertices"], mesh_file["edges"], mesh_file["faces"])
+        mesh = cls._create()
+        mesh.vertices, mesh.edges, mesh.faces = mesh_file["vertices"], mesh_file["edges"], mesh_file["faces"]
+        return mesh
+
+    @classmethod
+    def copy_mesh(cls, other_mesh: Self) -> Self:
+        """Copy all parameters from another mesh in a new mesh."""
+        mesh = cls._create()
+        mesh.vertices = other_mesh.vertices.copy()
+        mesh.edges = other_mesh.edges.copy()
+        mesh.faces = other_mesh.faces.copy()
+        mesh.width = other_mesh.width
+        mesh.height = other_mesh.height
+        mesh.vertices_params = other_mesh.vertices_params.copy()
+        mesh.edges_params = other_mesh.edges_params.copy()
+        mesh.faces_params = other_mesh.faces_params.copy()
+        mesh.vertices_target = other_mesh.vertices_target.copy()
+        mesh.edges_target = other_mesh.edges_target.copy()
+        mesh.faces_target = other_mesh.faces_target.copy()
+        mesh.image_target = other_mesh.image_target.copy()
+        mesh.bilevel_optimization_method = other_mesh.bilevel_optimization_method
+        mesh.beta = other_mesh.beta
+        mesh.min_dist_T1 = other_mesh.min_dist_T1
+        mesh.max_nb_iterations = other_mesh.max_nb_iterations
+        mesh.tolerance = other_mesh.tolerance
+        mesh.patience = other_mesh.patience
+        mesh.inner_solver = other_mesh.inner_solver
+        mesh.outer_solver = other_mesh.outer_solver
+
+        return mesh
+
+    @property
+    def nb_vertices(self) -> int:
+        """Get the number of vertices of the mesh."""
+        return len(self.vertices)
+
+    @property
+    def nb_edges(self) -> int:
+        """Get the number of edges of the mesh."""
+        return len(self.edges) // 2
+
+    @property
+    def nb_faces(self) -> int:
+        """Get the number of faces of the mesh."""
+        return len(self.faces)
 
     def inner_opt(
         self,

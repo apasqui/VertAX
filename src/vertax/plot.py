@@ -1,6 +1,7 @@
 import os
 
 import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
 from matplotlib.patches import Arc
 
@@ -9,7 +10,12 @@ def get_cmap(n, name="hsv"):
     """Returns a function that maps each index in 0, 1, ..., n-1 to a distinct
     RGB color. The keyword argument name must be a standard mpl colormap name.
     """
-    return plt.cm.get_cmap(name, n)
+
+    def cmap_with_n_colors(i: int):
+        cmap = matplotlib.colormaps.get_cmap(name)
+        return cmap(i / (n - 1))
+
+    return cmap_with_n_colors
 
 
 def plot_mesh(

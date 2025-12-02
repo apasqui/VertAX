@@ -5,11 +5,13 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from jax import Array, grad, jacfwd, jit, lax
+from scipy.sparse.linalg import minres
 
 from vertax.geo import update_pbc
-from vertax.topo import update_T1, update_T1_bounded
+from vertax.topo import update_T1
 
 
 class OptimizationTarget(Enum):
@@ -42,7 +44,7 @@ def _jit_minimize(
     width: float,
     height: float,
     L_in,
-    solver,
+    solver: optax.GradientTransformation,
     min_dist_T1,
     iterations_max: int = 1000,
     tolerance=1e-4,
@@ -120,7 +122,7 @@ def _jit_minimize(
         updates, new_opt_state = solver.update(grads, opt_state)
 
         # 5) Apply updates to the chosen array on selected indices
-        updates_sel = updates.at[sel].get()
+        updates_sel = updates.at[sel].get()  # type: ignore
 
         # --- Conditional Application of Optimization Update and State ---
         arrays = [vt, ht, ft, vp, hp, fp]
@@ -206,7 +208,7 @@ def minimize(
     he_params,
     face_params,
     L_in,
-    solver,
+    solver: optax.GradientTransformation,
     min_dist_T1,
     iterations_max=1000,
     tolerance=1e-4,
@@ -472,7 +474,7 @@ def outer_opt(
     grads = {"vert_params": grad_verts, "he_params": grad_hes, "face_params": grad_faces}
     opt_state = solver_outer.init(params)
     updates, opt_state = solver_outer.update(grads, opt_state, params)
-    updated_params = optax.apply_updates(params, updates)
+    updated_params = optax.apply_updates(params, updates)  # type: ignore
     new_vert_params: Array = updated_params["vert_params"]  # type: ignore
     new_he_params: Array = updated_params["he_params"]  # type: ignore
     new_face_params: Array = updated_params["face_params"]  # type: ignore
@@ -542,7 +544,7 @@ def minimize_ep(
     selected_faces,  # 12, 13, 14
     image_target,
     beta,  # 15, 16
-    solver,  # 17 [STATIC] <--- FIXED
+    solver: optax.GradientTransformation,  # 17 [STATIC] <--- FIXED
     min_dist_T1,  # 18
     iterations_max=1000,
     tolerance=1e-3,
@@ -636,11 +638,9 @@ def inner_eq_prop(
     tolerance=1e-3,
     patience=5,
 ) -> tuple[tuple[Array, Array, Array], Array]:
-    """
-    Wrapper to call the JIT-compiled minimize function and handle
+    """Wrapper to call the JIT-compiled minimize function and handle
     post-processing (slicing history).
     """
-
     # Call the JIT-compiled minimize function (defined in previous step)
     # We pass all targets and loss components so they can be bound
     # inside the static wrapper.
@@ -1040,6 +1040,121 @@ def outer_implicit(
 
 
 def outer_adjoint_state(
+    vertTable,
+    heTable,
+    faceTable,
+    width,
+    height,
+    vert_params,
+    he_params,
+    face_params,
+    vertTable_target,
+    heTable_target,
+    faceTable_target,
+    L_in,
+    L_out,
+    solver_inner,
+    solver_outer,
+    min_dist_T1,
+    iterations_max,
+    tolerance,
+    patience,
+    selected_verts,
+    selected_hes,
+    selected_faces,
+    image_target,
+):
+    def L_in_flatten(vertTable_flatten, heTable, faceTable, vert_params, he_params, face_params):
+        vertTable_tmp = vertTable_flatten.reshape(len(vertTable_flatten) // 2, 2)
+        return L_in(vertTable_tmp, heTable, faceTable, vert_params, he_params, face_params)
+
+    (vertTable_eq, heTable_eq, faceTable_eq), _L_in_value = inner_opt(
+        vertTable,
+        heTable,
+        faceTable,
+        width,
+        height,
+        vert_params,
+        he_params,
+        face_params,
+        L_in,
+        solver_inner,
+        min_dist_T1,
+        iterations_max,
+        tolerance,
+        patience,
+        selected_verts,
+        selected_hes,
+        selected_faces,
+    )
+
+    vertTable_eq_flat = vertTable_eq.flatten()
+
+    H = jacfwd(grad(L_in_flatten, argnums=0), argnums=0)(
+        vertTable_eq_flat, heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    )
+
+    gradout = grad(L_out, argnums=0)(
+        vertTable_eq,
+        heTable_eq,
+        faceTable_eq,
+        width,
+        height,
+        vertTable_target,
+        heTable_target,
+        faceTable_target,
+        image_target,
+    ).flatten()
+
+    # # GMRES, which is robust to H being symmetric indefinite
+    # Lambda, info = gmres(H, gradout)
+    # # if info != 0:
+    # #     print(f"Warning: GMRES solver did not converge. Info code: {info}")
+
+    # --- Integration of SciPy MINRES ---
+    # Convert JAX arrays to NumPy arrays for SciPy function call
+    H_np = np.asarray(H)
+    gradout_np = np.asarray(gradout)
+
+    # Call SciPy MINRES. H is symmetric and possibly indefinite, so MINRES is suitable.
+    Lambda_np, info = minres(H_np, gradout_np)
+
+    # Convert the result back to a JAX array
+    Lambda = jnp.asarray(Lambda_np)
+
+    if info != 0:
+        print(f"Warning: MINRES solver did not converge. Info code: {info}")
+    # --- End of MINRES Integration ---
+
+    crossderivative_verts = jacfwd(grad(L_in_flatten, argnums=0), argnums=3)(
+        vertTable_eq_flat, heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    )
+    crossderivative_hes = jacfwd(grad(L_in_flatten, argnums=0), argnums=4)(
+        vertTable_eq_flat, heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    )
+    crossderivative_faces = jacfwd(grad(L_in_flatten, argnums=0), argnums=5)(
+        vertTable_eq_flat, heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    )
+
+    grad_verts = -Lambda @ crossderivative_verts
+    grad_hes = -Lambda @ crossderivative_hes
+    grad_faces = -Lambda @ crossderivative_faces
+
+    params = {"vert_params": vert_params, "he_params": he_params, "face_params": face_params}
+    grads = {"vert_params": grad_verts, "he_params": grad_hes, "face_params": grad_faces}
+
+    opt_state = solver_outer.init(params)
+    updates, opt_state = solver_outer.update(grads, opt_state, params)
+    updated_params = optax.apply_updates(params, updates)
+
+    vert_params = updated_params["vert_params"]  # type: ignore
+    he_params = updated_params["he_params"]  # type: ignore
+    face_params = updated_params["face_params"]  # type: ignore
+
+    return vert_params, he_params, face_params
+
+
+def outer_adjoint_state_old(
     vertTable,
     heTable,
     faceTable,
