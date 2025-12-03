@@ -1,6 +1,6 @@
 """Abstract mesh module."""
 
-from collections.abc import Callable
+from enum import Enum
 from pathlib import Path
 from typing import Any, NoReturn, Self, TypeVar
 
@@ -9,27 +9,16 @@ import numpy as np
 import optax
 from jax import Array
 
-from vertax.opt import BilevelOptimizationMethod, bilevel_opt, inner_opt
-
 T = TypeVar("T")
-type InnerLossFunction = Callable[[Array, Array, Array, Array, Array, Array], Array]
-type OuterLossFunction = Callable[
-    [
-        Array,
-        Array,
-        Array,
-        float,
-        float,
-        Array,
-        Array,
-        Array,
-        None | list[float],
-        None | list[float],
-        None | list[float],
-        Array,
-    ],
-    float,
-]
+
+
+class BilevelOptimizationMethod(Enum):
+    """Which optimization method to use in the bi-level optimization."""
+
+    AUTOMATIC_DIFFERENTIATION = "ad"
+    EQUILIBRIUM_PROPAGATION = "ep"
+    IMPLICIT_DIFFERENTIATION = "id"
+    ADJOINT_STATE = "as"
 
 
 class NoPublicConstructor(type):
@@ -152,116 +141,3 @@ class Mesh(metaclass=NoPublicConstructor):
     def nb_faces(self) -> int:
         """Get the number of faces of the mesh."""
         return len(self.faces)
-
-    def inner_opt(
-        self,
-        loss_function_inner: InnerLossFunction,
-        only_on_vertices: None | list[int] = None,
-        only_on_edges: None | list[int] = None,
-        only_on_faces: None | list[int] = None,
-    ) -> list[float]:
-        """Optimize the mesh for the loss function given.
-
-        Args:
-            loss_function_inner (InnerLossFunction): Loss function to optimize.
-            only_on_vertices (None | list[int] = None): Consider only a subset of vertices for the loss function.
-                                                        All vertices if None.
-            only_on_edges (None | list[int] = None): Consider only a subset of edges for the loss function.
-                                                        All edges if None.
-            only_on_faces (None | list[int] = None): Consider only a subset of faces for the loss function.
-                                                        All faces if None.
-
-        Returns:
-            list[float]: History of loss values during optimization.
-        """
-        selected_vertices, selected_edges, selected_faces = None, None, None
-        if only_on_vertices is not None:
-            selected_vertices = jnp.array(only_on_vertices)
-        if only_on_edges is not None:
-            selected_edges = jnp.array(only_on_edges)
-        if only_on_faces is not None:
-            selected_faces = jnp.array(only_on_faces)
-
-        (self.vertices, self.edges, self.faces), loss_history = inner_opt(
-            vertTable=self.vertices,
-            heTable=self.edges,
-            faceTable=self.faces,
-            width=self.width,
-            height=self.height,
-            vert_params=self.vertices_params,
-            he_params=self.edges_params,
-            face_params=self.faces_params,
-            L_in=loss_function_inner,
-            solver=self.inner_solver,
-            min_dist_T1=self.min_dist_T1,
-            iterations_max=self.max_nb_iterations,
-            tolerance=self.tolerance,
-            patience=self.patience,
-            selected_verts=selected_vertices,
-            selected_hes=selected_edges,
-            selected_faces=selected_faces,
-        )
-        return list(loss_history)
-
-    def bilevel_opt(
-        self,
-        loss_function_inner: InnerLossFunction,
-        loss_function_outer: OuterLossFunction,
-        only_on_vertices: None | list[int] = None,
-        only_on_edges: None | list[int] = None,
-        only_on_faces: None | list[int] = None,
-    ) -> list[float]:
-        """Optimize the mesh for the loss function given.
-
-        Args:
-            loss_function_inner (InnerLossFunction): Loss function to optimize.
-            loss_function_outer (OuterLossFunction): Loss function to optimize.
-            only_on_vertices (None | list[int] = None): Consider only a subset of vertices for the loss function.
-                                                        All vertices if None.
-            only_on_edges (None | list[int] = None): Consider only a subset of edges for the loss function.
-                                                        All edges if None.
-            only_on_faces (None | list[int] = None): Consider only a subset of faces for the loss function.
-                                                        All faces if None.
-
-        Returns:
-            list[float]: History of loss values during optimization.
-        """
-        selected_vertices, selected_edges, selected_faces = None, None, None
-        if only_on_vertices is not None:
-            selected_vertices = jnp.array(only_on_vertices)
-        if only_on_edges is not None:
-            selected_edges = jnp.array(only_on_edges)
-        if only_on_faces is not None:
-            selected_faces = jnp.array(only_on_faces)
-        (
-            (self.vertices, self.edges, self.faces, self.vertices_params, self.edges_params, self.faces_params),
-            loss_history,
-        ) = bilevel_opt(
-            vertTable=self.vertices,
-            heTable=self.edges,
-            faceTable=self.faces,
-            width=self.width,
-            height=self.height,
-            vert_params=self.vertices_params,
-            he_params=self.edges_params,
-            face_params=self.faces_params,
-            vertTable_target=self.vertices_target,
-            heTable_target=self.edges_target,
-            faceTable_target=self.faces_target,
-            L_in=loss_function_inner,
-            L_out=loss_function_outer,
-            solver_inner=self.inner_solver,
-            solver_outer=self.outer_solver,
-            min_dist_T1=self.min_dist_T1,
-            iterations_max=self.max_nb_iterations,
-            tolerance=self.tolerance,
-            patience=self.patience,
-            selected_verts=selected_vertices,
-            selected_hes=selected_edges,
-            selected_faces=selected_faces,
-            image_target=self.image_target,
-            beta=self.beta,
-            method=self.bilevel_optimization_method,
-        )
-
-        return list(loss_history)

@@ -3,62 +3,49 @@
 import jax.numpy as jnp
 import numpy as np
 import optax
+from numpy.testing import assert_allclose
 
+from vertax.bounded import BoundedMesh
 from vertax.energy import energy_bounded
-from vertax.opt_bounded import inner_opt_bounded
-from vertax.plot import plot_bounded_mesh
-from vertax.start import create_bounded_mesh_from_seeds
 
-# Settings
-n_cells = 20
-n_edges = (n_cells - 1) * 3
-min_dist_T1 = 0.025
-vert_params = jnp.asarray([0.0])
-face_params = jnp.asarray([0.0])
 
-# Solver
-sgd = optax.sgd(learning_rate=0.01)
-iterations_max = 1000
-tolerance = 1e-6
-patience = 5
+def test_regression() -> None:
+    """Test code for regression (December 2025)."""
+    # Settings
+    n_cells = 20
+    n_edges = (n_cells - 1) * 3
 
-# Initial condition
-L_box = jnp.sqrt(n_cells)
-rng_seed = 1  # np.random.randint(0, 2**32 - 1)
-rng = np.random.default_rng(seed=rng_seed)
-seeds = L_box * rng.random((n_cells, 2))
-vertTable, angTable, heTable, faceTable = create_bounded_mesh_from_seeds(seeds, show=True, rng=rng)
-he_params = jnp.asarray(rng.random(n_edges) * 20 - 10)
+    # Initial condition
+    L_box = jnp.sqrt(n_cells)
+    width = float(L_box)
+    height = float(L_box)
+    rng_seed = 1
+    bounded_mesh = BoundedMesh.from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=rng_seed)
+    rng = np.random.default_rng(seed=rng_seed)
+    bounded_mesh.min_dist_T1 = 0.025
 
-# Energy minimization
-(vertTable_eq, angTable_eq, heTable_eq, faceTable_eq), energies = inner_opt_bounded(
-    vertTable,
-    angTable,
-    heTable,
-    faceTable,
-    vert_params,
-    he_params,
-    face_params,
-    energy_bounded,
-    sgd,
-    min_dist_T1,
-    iterations_max,
-    tolerance,
-    patience,
-)
+    # Solver
+    bounded_mesh.inner_solver = optax.sgd(learning_rate=0.01)
+    bounded_mesh.max_nb_iterations = 1000
+    bounded_mesh.tolerance = 1e-6
+    bounded_mesh.patience = 5
+    bounded_mesh.vertices_params = jnp.asarray([0.0])
+    bounded_mesh.edges_params = jnp.asarray(rng.random(n_edges) * 20 - 10)
+    bounded_mesh.faces_params = jnp.asarray([0.0])
 
-# Plotting/saving
-plot_bounded_mesh(
-    vertTable_eq,
-    angTable_eq,
-    heTable_eq,
-    faceTable_eq,
-    L_box,
-    multicolor=True,
-    lines=True,
-    vertices=False,
-    path="./",
-    name="forward_modeling_bounded",
-    save=True,
-    show=True,
-)
+    # Energy minimization
+    bounded_mesh.inner_opt(loss_function_inner=energy_bounded)
+
+    saved_path = "tests/reference_result_test_forward_modeling_bounded.npz"
+    # bounded_mesh.save_mesh(saved_path)
+
+    ref_mesh = BoundedMesh.load_mesh(saved_path)
+
+    assert_allclose(bounded_mesh.vertices, ref_mesh.vertices, rtol=0.001)
+    assert_allclose(bounded_mesh.edges, ref_mesh.edges, rtol=0.001)
+    assert_allclose(bounded_mesh.faces, ref_mesh.faces, rtol=0.001)
+    assert_allclose(bounded_mesh.angles, ref_mesh.angles, rtol=0.001)
+
+
+if __name__ == "__main__":
+    test_regression()

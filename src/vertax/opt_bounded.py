@@ -8,12 +8,13 @@ import jax.numpy as jnp
 import optax
 from jax import Array, grad, jacfwd, jit, lax
 
+from vertax.mesh import BilevelOptimizationMethod
 from vertax.topo import update_T1_bounded
 
-type InnerLossFunction = Callable[
+InnerLossFunction = Callable[
     [Array, Array, Array, Array, Array | None, Array | None, Array | None, Array, Array, Array], Array
 ]
-type OuterLossFunction = Callable[
+OuterLossFunction = Callable[
     [
         Array,
         Array | None,
@@ -31,7 +32,7 @@ type OuterLossFunction = Callable[
     Array,
 ]
 
-type LossEPFunction = Callable[
+LossEPFunction = Callable[
     [
         Array,
         Array,
@@ -1251,88 +1252,92 @@ def bilevel_opt_bounded(
     selected_faces: Array | None,
     image_target: Array | None,
     beta: float = 0.001,
-    method: str = "ad",
+    optimization_method: BilevelOptimizationMethod = BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION,
 ) -> tuple[tuple[Array, Array, Array, Array, Array, Array, Array], Array]:
     """Bilevel optimization for bounded meshes."""
-    if method == "ad":
-        vert_params, he_params, face_params = outer_opt_bounded(
-            vertTable,
-            angTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            vertTable_target,
-            angTable_target,
-            heTable_target,
-            faceTable_target,
-            L_in,
-            L_out,
-            solver_inner,
-            solver_outer,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-            image_target,
-        )
-    elif method == "ep":
-        vert_params, he_params, face_params = outer_eq_prop_bounded(
-            vertTable,
-            angTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            vertTable_target,
-            angTable_target,
-            heTable_target,
-            faceTable_target,
-            L_in,
-            L_out,
-            solver_inner,
-            solver_outer,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-            image_target,
-            beta,
-        )
-    elif method == "id":
-        vert_params, he_params, face_params = outer_implicit_bounded(
-            vertTable,
-            angTable,
-            heTable,
-            faceTable,
-            vert_params,
-            he_params,
-            face_params,
-            vertTable_target,
-            angTable_target,
-            heTable_target,
-            faceTable_target,
-            L_in,
-            L_out,
-            solver_inner,
-            solver_outer,
-            min_dist_T1,
-            iterations_max,
-            tolerance,
-            patience,
-            selected_verts,
-            selected_hes,
-            selected_faces,
-            image_target,
-        )
+    match optimization_method:
+        case BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION:
+            vert_params, he_params, face_params = outer_opt_bounded(
+                vertTable,
+                angTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                vertTable_target,
+                angTable_target,
+                heTable_target,
+                faceTable_target,
+                L_in,
+                L_out,
+                solver_inner,
+                solver_outer,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+                image_target,
+            )
+        case BilevelOptimizationMethod.EQUILIBRIUM_PROPAGATION:
+            vert_params, he_params, face_params = outer_eq_prop_bounded(
+                vertTable,
+                angTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                vertTable_target,
+                angTable_target,
+                heTable_target,
+                faceTable_target,
+                L_in,
+                L_out,
+                solver_inner,
+                solver_outer,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+                image_target,
+                beta,
+            )
+        case BilevelOptimizationMethod.IMPLICIT_DIFFERENTIATION:
+            vert_params, he_params, face_params = outer_implicit_bounded(
+                vertTable,
+                angTable,
+                heTable,
+                faceTable,
+                vert_params,
+                he_params,
+                face_params,
+                vertTable_target,
+                angTable_target,
+                heTable_target,
+                faceTable_target,
+                L_in,
+                L_out,
+                solver_inner,
+                solver_outer,
+                min_dist_T1,
+                iterations_max,
+                tolerance,
+                patience,
+                selected_verts,
+                selected_hes,
+                selected_faces,
+                image_target,
+            )
+        case _:
+            msg = f"{optimization_method} is not implemented for bounded meshes."
+            raise ValueError(msg)
     (vertTable, angTable, heTable, faceTable), cost = inner_opt_bounded(
         vertTable,
         angTable,

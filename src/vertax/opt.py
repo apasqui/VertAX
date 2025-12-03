@@ -11,6 +11,7 @@ from jax import Array, grad, jacfwd, jit, lax
 from scipy.sparse.linalg import minres
 
 from vertax.geo import update_pbc
+from vertax.mesh import BilevelOptimizationMethod
 from vertax.topo import update_T1
 
 
@@ -1258,15 +1259,6 @@ def outer_adjoint_state_old(
 #############
 ## WRAPPER ##
 #############
-
-
-class BilevelOptimizationMethod(Enum):
-    """Which optimization method to use in the bi-level optimization."""
-
-    AUTOMATIC_DIFFERENTIATION = "ad"
-    EQUILIBRIUM_PROPAGATION = "ep"
-    IMPLICIT_DIFFERENTIATION = "id"
-    ADJOINT_STATE = "as"
 
 
 def bilevel_opt(

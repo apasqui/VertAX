@@ -600,7 +600,6 @@ def create_bounded_mesh_from_seeds(  # noqa: C901
     """
     n_cells = len(seeds)  # starting number of seeds must be equal to the desired number of cells (faces)
     L_box = np.sqrt(n_cells)
-
     if rng is None:
         rng = np.random.default_rng()
 
@@ -776,17 +775,6 @@ def create_bounded_mesh_from_seeds(  # noqa: C901
                         name="simulation_init",
                         save=True,
                     )
-
-                Path(path + "simulation_init").mkdir(exist_ok=True)
-                np.savetxt(path + "simulation_init/vertTable.csv", vertTable, delimiter="\t", fmt="%1.18f")
-                np.savetxt(path + "simulation_init/angTable.csv", angTable, delimiter="\t", fmt="%1.18f")
-                np.savetxt(path + "simulation_init/faceTable.csv", faceTable, delimiter="\t", fmt="%1.0d")
-                np.savetxt(path + "simulation_init/heTable.csv", heTable, delimiter="\t", fmt="%1.0d")
-
-                np.save(path + "simulation_init/vertTable", vertTable)
-                np.save(path + "simulation_init/angTable", angTable)
-                np.save(path + "simulation_init/faceTable", faceTable)
-                np.save(path + "simulation_init/heTable", heTable)
 
                 vertTable = jnp.array(vertTable)
                 angTable = jnp.array(angTable)

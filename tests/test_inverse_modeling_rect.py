@@ -6,11 +6,11 @@ import jax.numpy as jnp
 import jax.random
 import optax
 from jax import jit, vmap
-from numpy.testing import assert_allclose
 
 from vertax.cost import cost_v2v
 from vertax.geo import get_area, get_length
-from vertax.opt import BilevelOptimizationMethod, bilevel_opt, inner_opt
+from vertax.mesh import BilevelOptimizationMethod
+from vertax.opt import bilevel_opt, inner_opt
 from vertax.pbc import PBCMesh
 from vertax.plot import plot_mesh
 

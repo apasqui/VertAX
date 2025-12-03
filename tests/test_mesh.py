@@ -44,7 +44,7 @@ def test_compare_pbc_mesh_with_create_mesh_from_seeds() -> None:
 
 
 @pytest.mark.long
-def no_pytest_test_compare_pbc_mesh_with_create_mesh_from_image() -> None:
+def test_compare_pbc_mesh_with_create_mesh_from_image() -> None:
     """Compare the two from_seeds functions. They should be the same."""
     plot = False
     # imread tiff = Y is the first axis, X the second.
@@ -86,4 +86,4 @@ if __name__ == "__main__":
     test_private_constructor_mesh()
     test_mesh_can_be_privately_created()
     test_compare_pbc_mesh_with_create_mesh_from_seeds()
-    no_pytest_test_compare_pbc_mesh_with_create_mesh_from_image()
+    test_compare_pbc_mesh_with_create_mesh_from_image()
