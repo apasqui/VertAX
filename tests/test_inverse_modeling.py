@@ -27,10 +27,10 @@ def test_inverse_modeling_for_regressions() -> None:  # noqa: C901
 
     # Settings
     n_cells = 20
+    epochs = 2
     L_box = jnp.sqrt(n_cells)
     width = float(L_box)
     height = float(L_box)
-    epochs = 2
     MAX_EDGES_IN_ANY_FACE = 20
 
     # Set periodic boundary mesh and some of its properties

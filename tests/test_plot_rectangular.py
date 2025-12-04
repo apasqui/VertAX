@@ -1,9 +1,5 @@
 """Manual check that a rectangular plot is working."""
 
-from jax._src.random import KeyArray
-import jax.numpy as jnp
-import jax.random
-
 from vertax.pbc import PBCMesh
 from vertax.plot import plot_mesh
 

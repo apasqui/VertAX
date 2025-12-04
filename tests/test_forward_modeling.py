@@ -1,16 +1,20 @@
+"""Simple forward test for the periodic case."""
+
 # Package imports
-from functools import partial
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jax import Array
 from time import perf_counter
 
 import jax.numpy as jnp
-import jax.random
 import optax
-from jax import jit, vmap
 from numpy.testing import assert_allclose
 
-from vertax.geo import get_area, get_perimeter
-from vertax.opt import inner_opt
-from vertax.start import create_mesh_from_seeds, load_mesh
+from vertax.energy import energy_shape_factor_homo
+from vertax.pbc import PBCMesh
 
 
 def test_forward_modeling_for_regressions() -> None:
@@ -19,79 +23,46 @@ def test_forward_modeling_for_regressions() -> None:
 
     # Settings
     n_cells = 100
-    min_dist_T1 = 0.2
-    vert_params = jnp.asarray([0.0])
-    he_params = jnp.asarray([0.0])
-    face_params = jnp.asarray([3.7])
-
-    # Solver
-    sgd = optax.sgd(learning_rate=0.01)
-    iterations_max = 1000
-    tolerance = 1e-4
-    patience = 5
-
     # Initial condition
-    key = jax.random.PRNGKey(1)
     L_box = jnp.sqrt(n_cells)
     width = float(L_box)
     height = float(L_box)
-    seeds = L_box * jax.random.uniform(key, (n_cells, 2))
-    vertTable, heTable, faceTable = create_mesh_from_seeds(seeds)
+    pbc_mesh = PBCMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=1)
+    pbc_mesh.min_dist_T1 = 0.2
 
-    MAX_EDGES_IN_ANY_FACE = 20
+    # Solver
+    pbc_mesh.inner_solver = optax.sgd(learning_rate=0.01)
+    pbc_mesh.max_nb_iterations = 1000
+    pbc_mesh.tolerance = 1e-4
+    pbc_mesh.patience = 5
 
-    # Energy function
-    # @partial(jit, static_argnums=(5, 6))
-    def cell_energy(face, face_param, vertTable, heTable, faceTable):
-        area = get_area(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
-        perimeter = get_perimeter(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
-        return ((area - 1) ** 2) + ((perimeter - face_param) ** 2)
+    pbc_mesh.vertices_params = jnp.asarray([0.0])
+    pbc_mesh.edges_params = jnp.asarray([0.0])
+    pbc_mesh.faces_params = jnp.asarray([3.7])
 
-    # @partial(jit, static_argnums=(3, 4))
-    def energy(vertTable, heTable, faceTable, vert_params, he_params, face_params):
-        mapped_fn = lambda face, param: cell_energy(face, param, vertTable, heTable, faceTable)
-        face_params_broadcasted = jnp.broadcast_to(face_params, (len(faceTable),))
-        cell_energies = vmap(mapped_fn)(jnp.arange(len(faceTable)), face_params_broadcasted)
-        return jnp.sum(cell_energies)
+    def energy(
+        vertTable: Array, heTable: Array, faceTable: Array, _vert_params: Array, _he_params: Array, face_params: Array
+    ) -> Array:
+        """We use an energy given in vertAX for this example.
+
+        But only indirectly as the loss function for an inner optimization needs a specific function signature.
+        """
+        return energy_shape_factor_homo(vertTable, heTable, faceTable, width, height, face_params)
 
     # Energy minimization
-    (vertTable_eq, heTable_eq, faceTable_eq), _ = inner_opt(
-        vertTable,
-        heTable,
-        faceTable,
-        width,
-        height,
-        vert_params,
-        he_params,
-        face_params,
-        energy,
-        sgd,
-        min_dist_T1,
-        iterations_max,
-        tolerance,
-        patience,
-    )
+    pbc_mesh.inner_opt(loss_function_inner=energy)
 
-    t_end = perf_counter()
-    elapsed_times = t_end - t_start
-    print(f"Test forward modelling took {elapsed_times:.2f} s.")
+    print(f"Test forward modelling took {(perf_counter() - t_start):.2f} s.")
 
     # To create a new reference for the regression test only
-    # from vertax.start import save_mesh
-    # save_mesh("tests/reference_result_test_forward_modeling.npz", vertTable_eq, heTable_eq, faceTable_eq)
+    ref_path = "tests/reference_result_test_forward_modeling.npz"
+    # pbc_mesh.save_mesh(ref_path)
+    ref_mesh = PBCMesh.load_mesh(ref_path)
 
-    ref_vertices, ref_edges, ref_faces = load_mesh("tests/reference_result_test_forward_modeling.npz")
+    assert_allclose(pbc_mesh.vertices, ref_mesh.vertices, rtol=0.001)
+    assert_allclose(pbc_mesh.edges, ref_mesh.edges, rtol=0.001)
+    assert_allclose(pbc_mesh.faces, ref_mesh.faces, rtol=0.001)
 
-    assert_allclose(vertTable_eq, ref_vertices, rtol=0.001)
-    assert_allclose(heTable_eq, ref_edges, rtol=0.001)
-    assert_allclose(faceTable_eq, ref_faces, rtol=0.001)
-
-
-# Plotting/saving
-# plot_mesh(
-#     vertTable_eq, heTable_eq, faceTable_eq,
-#     L_box, multicolor=True, lines=True, vertices=False,
-#     path='./', name='forward_modeling', show=True, save=True)
 
 if __name__ == "__main__":
     test_forward_modeling_for_regressions()
