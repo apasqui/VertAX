@@ -5,6 +5,7 @@ from typing import Self
 
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
 from jax import Array
 from numpy.typing import NDArray
@@ -14,6 +15,7 @@ from vertax.geo import get_area, get_length, get_length_with_offset, get_perimet
 from vertax.mask_analysis import find_vertices_edges_faces, mask_from_image, pad
 from vertax.mesh import Mesh
 from vertax.opt import bilevel_opt, inner_opt
+from vertax.plot import get_cmap
 
 InnerLossFunction = Callable[[Array, Array, Array, Array, Array, Array], Array]
 OuterLossFunction = Callable[
@@ -432,6 +434,122 @@ class PBCMesh(Mesh):
         pbc_mesh.faces = jnp.array(faces, dtype=np.int32)
 
         return pbc_mesh
+
+    def plot(
+        self,
+        show_edges: bool = True,
+        show_vertices: bool = True,
+        show: bool = True,
+        save: bool = False,
+        save_path: str = "pbc_mesh.png",
+    ) -> None:
+        """Plot the mesh."""
+        vertTable = self.vertices
+        heTable = self.edges
+        faceTable = self.faces
+        width = self.width
+        height = self.height
+
+        cmap = get_cmap(len(faceTable))
+        all_verts = []
+        for face in range(len(faceTable)):
+            start_he = faceTable[face]
+            he = start_he
+
+            v_source = heTable[he][3]
+            verts_sources = np.array([vertTable[v_source]])
+            all_verts.append(vertTable[v_source])
+
+            he_offset_x = heTable[he][6]
+            he_offset_y = heTable[he][7]
+            sum0_offsets = he_offset_x
+            sum1_offsets = he_offset_y
+
+            he = heTable[he][1]
+
+            while he != start_he:
+                v_source = heTable[he][3]
+
+                all_verts.append(vertTable[v_source])
+
+                verts_sources = np.concatenate(
+                    (
+                        verts_sources,
+                        (np.array([vertTable[v_source]]) + np.array([sum0_offsets * width, sum1_offsets * height])),
+                    ),
+                    axis=0,
+                )
+
+                he_offset_x = heTable[he][6]
+                he_offset_y = heTable[he][7]
+                sum0_offsets += he_offset_x
+                sum1_offsets += he_offset_y
+
+                he = heTable[he][1]
+
+            v_source = heTable[he][3]
+            verts_sources = np.concatenate((verts_sources, (np.array([vertTable[v_source]]))), axis=0)
+            x, y = zip(*verts_sources, strict=False)
+            y = tuple(np.array((height,) * len(y)) - y)
+
+            plt.fill(x, y, color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(x, np.add(y, height), color=cmap(face), alpha=0.5)
+            plt.fill(x, np.add(y, -height), color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, width), y, color=cmap(face), alpha=0.5)
+            plt.fill(np.add(x, -width), y, color=cmap(face), alpha=0.5)
+
+            if show_edges:
+                for i in range(0, len(x) - 1, 1):
+                    plt.plot(x[i : i + 2], y[i : i + 2], "-", color="black")
+                    plt.plot(
+                        tuple(np.add(x[i : i + 2], (width, width))),
+                        tuple(np.add(y[i : i + 2], (height, height))),
+                        "-",
+                        color="black",
+                    )
+                    plt.plot(
+                        tuple(np.add(x[i : i + 2], (-width, -width))),
+                        tuple(np.add(y[i : i + 2], (-height, -height))),
+                        "-",
+                        color="black",
+                    )
+                    plt.plot(
+                        tuple(np.add(x[i : i + 2], (-width, -width))),
+                        tuple(np.add(y[i : i + 2], (height, height))),
+                        "-",
+                        color="black",
+                    )
+                    plt.plot(
+                        tuple(np.add(x[i : i + 2], (width, width))),
+                        tuple(np.add(y[i : i + 2], (-height, -height))),
+                        "-",
+                        color="black",
+                    )
+                    plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (height, height))), "-", color="black")
+                    plt.plot(x[i : i + 2], tuple(np.add(y[i : i + 2], (-height, -height))), "-", color="black")
+                    plt.plot(tuple(np.add(x[i : i + 2], (width, width))), y[i : i + 2], "-", color="black")
+                    plt.plot(tuple(np.add(x[i : i + 2], (-width, -width))), y[i : i + 2], "-", color="black")
+
+        if show_vertices:
+            all_verts = np.array(all_verts)
+            plt.scatter(all_verts[:, 0], height - all_verts[:, 1], color="black")
+
+        plt.xlim([0, width])
+        plt.ylim([0, height])
+
+        plt.gca().set_aspect("equal")
+
+        if save:
+            plt.savefig(save_path)
+
+        if show:
+            plt.show()
+
+        plt.clf()
 
 
 def _make_periodic(  # noqa: C901
