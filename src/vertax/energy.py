@@ -8,29 +8,24 @@ from vertax.geo import get_area, get_area_bounded, get_edge_length, get_length, 
 
 TARGET_AREA = 0.6
 
+MAX_EDGES_IN_ANY_FACE = 20
 
-@jit
+
 def cell_energy(
     face: Array, face_param: Array, vertTable: Array, heTable: Array, faceTable: Array, width: float, height: float
 ) -> Array:
     """Example of a cell energy function."""
-    area = get_area(face, vertTable, heTable, faceTable, width, height)
-    perimeter = get_perimeter(face, vertTable, heTable, faceTable, width, height)
+    area = get_area(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
+    perimeter = get_perimeter(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
     return ((area - 1) ** 2) + ((perimeter - face_param) ** 2)
 
 
-@jit
 def energy_shape_factor_homo(
     vertTable: Array,
     heTable: Array,
     faceTable: Array,
     width: float,
     height: float,
-    _selected_verts: Array,
-    _selected_hes: Array,
-    _selected_faces: Array,
-    _vert_params: Array,
-    _he_params: Array,
     face_params: Array,
 ) -> Array:
     """Example of an energy function."""
@@ -43,18 +38,13 @@ def energy_shape_factor_homo(
     return jnp.sum(cell_energies)
 
 
-@jit
 def energy_shape_factor_hetero(
     vertTable: Array,
     heTable: Array,
     faceTable: Array,
     width: float,
     height: float,
-    _selected_verts: Array,
-    _selected_hes: Array,
     selected_faces: Array,
-    _vert_params: Array,
-    _he_params: Array,
     face_params: Array,
 ) -> Array:
     """Example of an energy function."""
@@ -67,35 +57,28 @@ def energy_shape_factor_hetero(
     return jnp.sum(cell_energies)
 
 
-@jit
 def area_part(
     face: Array, face_param: Array, vertTable: Array, heTable: Array, faceTable: Array, width: float, height: float
 ) -> Array:
     """Part of an energy function."""
-    a = get_area(face, vertTable, heTable, faceTable, width, height)
+    a = get_area(face, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
     return (a - face_param) ** 2
 
 
-@jit
 def hedge_part(
     he: Array, he_param: Array, vertTable: Array, heTable: Array, faceTable: Array, width: float, height: float
 ) -> Array:
     """Part of an energy function."""
-    length = get_length(he, vertTable, heTable, faceTable, width, height)
+    length = get_length(he, vertTable, heTable, faceTable, width, height, MAX_EDGES_IN_ANY_FACE)
     return he_param * length
 
 
-@jit
 def energy_line_tensions(
     vertTable: Array,
     heTable: Array,
     faceTable: Array,
     width: float,
     height: float,
-    _selected_verts: Array,
-    _selected_hes: Array,
-    _selected_faces: Array,
-    _vert_params: Array,
     he_params: Array,
     face_params: Array,
 ) -> Array:
