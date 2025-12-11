@@ -196,6 +196,51 @@ def update_pbc(
     return vertTable, heTable, faceTable
 
 
+def select_verts_hes_faces_inside(
+    vertTable: Array, heTable: Array, faceTable: Array, x_min: float, x_max: float, y_min: float, y_max: float
+) -> tuple[Array, Array, Array]:
+    """Get a selection of all vertices, edges and faces for faces that lie totally inside the bounds."""
+    selected_faces = []
+    selected_hes = jnp.array([], dtype=int)
+    selected_verts = jnp.array([], dtype=int)
+
+    for face in range(len(faceTable)):
+        start_he = faceTable.at[face].get()
+        he = start_he
+
+        hes_idxs = []
+        verts_idxs = []
+        all_inside = True  # flag to check if all vertices are inside L_box_inner
+
+        while True:
+            v_source = heTable.at[he, 3].get()
+            vert_x, vert_y = vertTable.at[v_source, 0].get(), vertTable.at[v_source, 1].get()
+
+            # check if the vertex is outside the inner box
+            if not ((y_min <= vert_y <= y_max) and (x_min <= vert_x <= x_max)):
+                all_inside = False
+                break
+
+            hes_idxs.append(he)
+            verts_idxs.append(v_source)
+
+            he = heTable.at[he, 1].get()
+            if he == start_he:
+                break
+
+        if all_inside:
+            selected_faces.append(face)
+            selected_hes = jnp.concatenate((selected_hes, jnp.array(hes_idxs)))
+            selected_verts = jnp.concatenate((selected_verts, jnp.array(verts_idxs)))
+
+    # unique elements in each array
+    selected_verts = jnp.unique(selected_verts)
+    selected_hes = jnp.unique(selected_hes)
+    selected_faces = jnp.unique(jnp.array(selected_faces))
+
+    return selected_verts, selected_hes, selected_faces
+
+
 # ==========
 # Bounded
 # ==========
