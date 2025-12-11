@@ -65,7 +65,7 @@ LossEPFunction = Callable[
 ###############################
 
 
-@partial(jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16))
+@partial(jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17))
 def _minimize_bounded(  # noqa: C901
     vertTable: Array,
     angTable: Array,
@@ -541,7 +541,7 @@ def _loss_ep_static_bounded(
     return loss_inner_value + (beta * loss_outer_value)
 
 
-@partial(jit, static_argnums=(7, 12, 13, 14, 16, 17, 18, 24))
+@partial(jit, static_argnums=(7, 12, 13, 14, 15, 16, 17, 18, 23, 24, 25))
 def _minimize_ep_bounded(  # noqa: C901
     vertTable: Array,
     angTable: Array,
