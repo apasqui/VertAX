@@ -8,8 +8,8 @@ import jax.numpy as jnp
 import optax
 from jax import Array, grad, jacfwd, jit, lax
 
-from vertax.mesh import BilevelOptimizationMethod
-from vertax.topo import update_T1_bounded
+from vertax.opt import BilevelOptimizationMethod
+from vertax.topo import update_T1_bounded, do_not_update_T1_bounded
 
 InnerLossFunction = Callable[
     [Array, Array, Array, Array, Array | None, Array | None, Array | None, Array, Array, Array], Array
@@ -30,6 +30,11 @@ OuterLossFunction = Callable[
         Array | None,
     ],
     Array,
+]
+
+UpdateT1Func = Callable[
+    [Array, Array, Array, Array, Array, Array, Array, InnerLossFunction, float, Array, Array, Array],
+    tuple[Array, Array, Array, Array],
 ]
 
 LossEPFunction = Callable[
@@ -79,6 +84,7 @@ def _minimize_bounded(  # noqa: C901
     selected_hes: Array | None = None,
     selected_faces: Array | None = None,
     argnums: int = 0,
+    update_T1_func: UpdateT1Func = update_T1_bounded,
 ) -> tuple[tuple[Array, Array, Array, Array, Array, Array, Array], tuple[Array, Array]]:
     if selected_verts is None:
         selected_verts = jnp.arange(vertTable.shape[0])
@@ -192,7 +198,7 @@ def _minimize_bounded(  # noqa: C901
         should_stop = new_should_stop
 
         # Geometry updates
-        new_vt_T1, new_at_T1, new_ht_T1, new_ft_T1 = update_T1_bounded(
+        new_vt_T1, new_at_T1, new_ht_T1, new_ft_T1 = update_T1_func(
             vt, at, ht, ft, vp, hp, fp, L_in, min_dist_T1, selected_verts, selected_hes, selected_faces
         )
         vt = lax.cond(is_running, lambda: new_vt_T1, lambda: vt)
@@ -265,6 +271,7 @@ def inner_opt_bounded(
     selected_verts: Array | None = None,
     selected_hes: Array | None = None,
     selected_faces: Array | None = None,
+    update_T1_func: UpdateT1Func = update_T1_bounded,
 ) -> tuple[tuple[Array, Array, Array, Array], Array]:
     """Inner optimization for a bounded mesh."""
     # Use the general minimize function with argnums=0 (optimize vertTable)
@@ -286,6 +293,7 @@ def inner_opt_bounded(
         selected_hes=selected_hes,
         selected_faces=selected_faces,
         argnums=0,
+        update_T1_func=update_T1_func,
     )
 
     # Convert the JAX array step_f to a Python integer
@@ -319,6 +327,7 @@ def cost_ad_bounded(
     selected_hes: Array | None = None,
     selected_faces: Array | None = None,
     image_target: Array | None = None,
+    update_T1_func: UpdateT1Func = update_T1_bounded,
 ) -> Array:
     """Automatic differentiation cost function."""
     (vertTable, angTable, heTable, faceTable), _ = inner_opt_bounded(
@@ -338,6 +347,7 @@ def cost_ad_bounded(
         selected_verts,
         selected_hes,
         selected_faces,
+        update_T1_func,
     )
 
     loss_out_value = L_out(
@@ -382,6 +392,7 @@ def outer_opt_bounded(
     selected_hes: Array | None = None,
     selected_faces: Array | None = None,
     image_target: Array | None = None,
+    update_T1_func: UpdateT1Func = update_T1_bounded,
 ) -> tuple[Array, Array, Array]:
     """Outer optimization for a bounded mesh."""
     grad_verts = grad(cost_ad_bounded, argnums=4)(
@@ -407,6 +418,7 @@ def outer_opt_bounded(
         selected_hes,
         selected_faces,
         image_target,
+        update_T1_func,
     )
 
     grad_hes = grad(cost_ad_bounded, argnums=5)(
@@ -432,6 +444,7 @@ def outer_opt_bounded(
         selected_hes,
         selected_faces,
         image_target,
+        update_T1_func,
     )
 
     grad_faces = grad(cost_ad_bounded, argnums=6)(
@@ -457,6 +470,7 @@ def outer_opt_bounded(
         selected_hes,
         selected_faces,
         image_target,
+        update_T1_func,
     )
 
     params = {"vert_params": vert_params, "he_params": he_params, "face_params": face_params}
@@ -554,6 +568,7 @@ def _minimize_ep_bounded(  # noqa: C901
     image_target: Array | None = None,
     beta: float = 0.001,
     argnums: int = 0,
+    update_T1_func: UpdateT1Func = update_T1_bounded,
 ) -> tuple[tuple[Array, Array, Array, Array, Array, Array, Array], tuple[Array, Array]]:
     def loss_evaluated(vt: Array, at: Array, ht: Array, ft: Array, vp: Array, hp: Array, fp: Array) -> Array:
         return loss_fn(
@@ -678,7 +693,7 @@ def _minimize_ep_bounded(  # noqa: C901
         should_stop = new_should_stop
 
         # Geometry updates
-        new_vt_T1, new_at_T1, new_ht_T1, new_ft_T1 = update_T1_bounded(
+        new_vt_T1, new_at_T1, new_ht_T1, new_ft_T1 = update_T1_func(
             vt, at, ht, ft, vp, hp, fp, L_in, min_dist_T1, selected_verts, selected_hes, selected_faces
         )
         vt = lax.cond(is_running, lambda: new_vt_T1, lambda: vt)
@@ -759,6 +774,7 @@ def inner_eq_prop_bounded(
     selected_faces: Array | None,
     image_target: Array | None,
     beta: float,
+    update_T1_func: UpdateT1Func = update_T1_bounded,
 ) -> tuple[tuple[Array, Array, Array, Array], Array]:
     """Inner optimization function for equilibrium propagation only and bounded meshes."""
     (vt_f, at_f, ht_f, ft_f, _vp_f, _hp_f, _fp_f), (L_hist_full, step_f_array) = _minimize_ep_bounded(
@@ -787,6 +803,7 @@ def inner_eq_prop_bounded(
         image_target,
         beta,
         argnums=0,
+        update_T1_func=update_T1_func,
     )
 
     step_f = step_f_array.item()
@@ -819,6 +836,7 @@ def outer_eq_prop_bounded(
     selected_faces: Array | None,
     image_target: Array | None,
     beta: float,
+    update_T1_func: UpdateT1Func = update_T1_bounded,
 ) -> tuple[Array, Array, Array]:
     """Outer optimization for equilibrium propagation."""
     (vertTable_free, angTable_free, heTable_free, faceTable_free), _loss_free = inner_eq_prop_bounded(
@@ -846,6 +864,7 @@ def outer_eq_prop_bounded(
         selected_faces,
         image_target,
         beta=0.0,
+        update_T1_func=update_T1_func,
     )
 
     (vertTable_nudged, angTable_nudged, heTable_nudged, faceTable_nudged), _loss_nudged = inner_eq_prop_bounded(
@@ -873,6 +892,7 @@ def outer_eq_prop_bounded(
         selected_faces,
         image_target,
         beta,
+        update_T1_func,
     )
 
     grad_loss_ep_free_verts = grad(_loss_ep_static_bounded, argnums=4)(
@@ -1046,6 +1066,7 @@ def outer_implicit_bounded(
     selected_hes: Array | None,
     selected_faces: Array | None,
     image_target: Array | None,
+    update_T1_func: UpdateT1Func = update_T1_bounded,
 ) -> tuple[Array, Array, Array]:
     """Outer optimization for implicit differentiation method."""
 
@@ -1091,6 +1112,7 @@ def outer_implicit_bounded(
         selected_verts,
         selected_hes,
         selected_faces,
+        update_T1_func,
     )
 
     H = jacfwd(grad(L_in_flatten, argnums=0), argnums=0)(
@@ -1253,6 +1275,7 @@ def bilevel_opt_bounded(
     image_target: Array | None,
     beta: float = 0.001,
     optimization_method: BilevelOptimizationMethod = BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION,
+    update_T1_func: UpdateT1Func = update_T1_bounded,
 ) -> tuple[tuple[Array, Array, Array, Array, Array, Array, Array], Array]:
     """Bilevel optimization for bounded meshes."""
     match optimization_method:
@@ -1308,6 +1331,7 @@ def bilevel_opt_bounded(
                 selected_faces,
                 image_target,
                 beta,
+                update_T1_func,
             )
         case BilevelOptimizationMethod.IMPLICIT_DIFFERENTIATION:
             vert_params, he_params, face_params = outer_implicit_bounded(
@@ -1334,6 +1358,7 @@ def bilevel_opt_bounded(
                 selected_hes,
                 selected_faces,
                 image_target,
+                update_T1_func,
             )
         case _:
             msg = f"{optimization_method} is not implemented for bounded meshes."
@@ -1355,6 +1380,7 @@ def bilevel_opt_bounded(
         selected_verts,
         selected_hes,
         selected_faces,
+        update_T1_func,
     )
 
     return (vertTable, angTable, heTable, faceTable, vert_params, he_params, face_params), cost

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import Enum
 from pathlib import Path
 from typing import Any, NoReturn, Self, TypeVar
 
@@ -11,16 +10,9 @@ import numpy as np
 import optax
 from jax import Array
 
+from vertax.opt import BilevelOptimizationMethod
+
 T = TypeVar("T")
-
-
-class BilevelOptimizationMethod(Enum):
-    """Which optimization method to use in the bi-level optimization."""
-
-    AUTOMATIC_DIFFERENTIATION = "ad"
-    EQUILIBRIUM_PROPAGATION = "ep"
-    IMPLICIT_DIFFERENTIATION = "id"
-    ADJOINT_STATE = "as"
 
 
 class NoPublicConstructor(type):

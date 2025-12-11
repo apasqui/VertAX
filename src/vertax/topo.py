@@ -1,4 +1,7 @@
+"""Topology module to handle T1 transitions in meshes."""
+
 from functools import partial
+from typing import TYPE_CHECKING
 
 import jax
 import jax.lax
@@ -6,6 +9,7 @@ import jax.numpy as jnp
 from jax import Array, jit
 
 from vertax.geo import get_length, update_pbc
+
 
 ROT_ANGLE = -jnp.pi / 2
 SINA = jnp.sin(ROT_ANGLE)
@@ -24,16 +28,16 @@ def update_T1(
     face_params,
     L_in,
     min_dist_T1,
-    selected_verts=None,
-    selected_hes=None,
-    selected_faces=None,
-):
-    if selected_verts is None:
-        selected_verts = jnp.arange(vertTable.shape[0])
-    if selected_hes is None:
-        selected_hes = jnp.arange(heTable.shape[0])
-    if selected_faces is None:
-        selected_faces = jnp.arange(faceTable.shape[0])
+    selected_verts,
+    selected_hes,
+    selected_faces,
+) -> tuple[Array, Array, Array]:
+    # if selected_verts is None:
+    #     selected_verts = jnp.arange(vertTable.shape[0])
+    # if selected_hes is None:
+    #     selected_hes = jnp.arange(heTable.shape[0])
+    # if selected_faces is None:
+    #     selected_faces = jnp.arange(faceTable.shape[0])
 
     def body_fun(idx, state):
         vertTable_new, heTable_new, faceTable_new = state
@@ -310,6 +314,25 @@ def update_T1(
     return vertTable_last, heTable_last, faceTable_last
 
 
+@partial(jit, static_argnums=(3, 4, 8))
+def do_not_update_T1(
+    vertTable,
+    heTable,
+    faceTable,
+    width,
+    height,
+    vert_params,
+    he_params,
+    face_params,
+    L_in,
+    min_dist_T1,
+    selected_verts,
+    selected_hes,
+    selected_faces,
+) -> tuple[Array, Array, Array]:
+    return vertTable, heTable, faceTable
+
+
 # ==========
 # Bounded
 # ==========
@@ -327,7 +350,7 @@ def update_T1_bounded(
     selected_verts=None,
     selected_hes=None,
     selected_faces=None,
-):
+) -> tuple[Array, Array, Array, Array]:
     num_edges = heTable.shape[0] // 2
     angTable = jnp.clip(angTable, 0.017, jnp.pi / 2 - 0.001)
     scale = (min_dist_T1 + 10 ** (-3)) / 2
@@ -769,3 +792,21 @@ def update_T1_bounded(
         )
 
     return jax.lax.fori_loop(0, num_edges, body_fun, (vertTable, angTable, heTable, faceTable))
+
+
+@partial(jit, static_argnums=(7, 8))
+def do_not_update_T1_bounded(
+    vertTable,
+    angTable,
+    heTable,
+    faceTable,
+    vert_params,
+    he_params,
+    face_params,
+    L_in,
+    min_dist_T1,
+    selected_verts=None,
+    selected_hes=None,
+    selected_faces=None,
+) -> tuple[Array, Array, Array, Array]:
+    return vertTable, angTable, heTable, faceTable

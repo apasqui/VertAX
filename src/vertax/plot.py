@@ -21,6 +21,7 @@ class FacePlot(Enum):
     AREA = 3
     PERIMETER = 4
     WHITE = 5
+    FATES = 6
 
 
 class EdgePlot(Enum):

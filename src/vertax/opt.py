@@ -1,5 +1,6 @@
 """Optimization methods for VertAX."""
 
+from collections.abc import Callable
 from enum import Enum
 from functools import partial
 
@@ -7,11 +8,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from jax import Array, grad, jacfwd, jit, lax
-from scipy.sparse.linalg import minres
+from jax import Array, grad, jacfwd, jit, jvp, lax
+from scipy.sparse.linalg import LinearOperator, minres
 
 from vertax.geo import update_pbc
-from vertax.mesh import BilevelOptimizationMethod
 from vertax.topo import update_T1
 
 
@@ -26,12 +26,51 @@ class OptimizationTarget(Enum):
     FACE_PARAMETERS = 5
 
 
+InnerLossFunction = Callable[[Array, Array, Array, Array, Array, Array], Array]
+OuterLossFunction = Callable[
+    [
+        Array,
+        Array,
+        Array,
+        float,
+        float,
+        Array,
+        Array,
+        Array,
+        None | list[float],
+        None | list[float],
+        None | list[float],
+        Array,
+    ],
+    float,
+]
+
+UpdateT1Func = Callable[
+    [
+        Array,
+        Array,
+        Array,
+        float,
+        float,
+        Array,
+        Array,
+        Array,
+        InnerLossFunction,
+        float,
+        Array,
+        Array,
+        Array,
+    ],
+    tuple[Array, Array, Array],
+]
+
+
 ###############################
 ## AUTOMATIC DIFFERENTIATION ##
 ###############################
 
 
-@partial(jit, static_argnums=(9, 10, 11, 12, 13, 14, 15, 16, 17))
+@partial(jit, static_argnums=(9, 10, 11, 12, 13, 14, 15, 16, 17, 18))
 def _jit_minimize(
     vertTable: Array,
     heTable: Array,
@@ -51,6 +90,7 @@ def _jit_minimize(
     tolerance=1e-4,
     patience=5,
     optimization_target: OptimizationTarget = OptimizationTarget.VERTICES,
+    update_t1_func: UpdateT1Func = update_T1,
 ) -> tuple[tuple[Array, Array, Array, Array, Array, Array], tuple[Array, Array]]:
     x0: Array = [vertTable, heTable, faceTable, vert_params, he_params, face_params][optimization_target.value]  # type: ignore
     sel: Array = [
@@ -145,7 +185,9 @@ def _jit_minimize(
         ht = lax.cond(is_running, lambda: new_ht_pbc, lambda: ht)
         ft = lax.cond(is_running, lambda: new_ft_pbc, lambda: ft)
 
-        new_vt_T1, new_ht_T1, new_ft_T1 = update_T1(vt, ht, ft, width, height, vp, hp, fp, L_in, min_dist_T1)
+        new_vt_T1, new_ht_T1, new_ft_T1 = update_t1_func(
+            vt, ht, ft, width, height, vp, hp, fp, L_in, min_dist_T1, selected_verts, selected_hes, selected_faces
+        )
         vt = lax.cond(is_running, lambda: new_vt_T1, lambda: vt)
         ht = lax.cond(is_running, lambda: new_ht_T1, lambda: ht)
         ft = lax.cond(is_running, lambda: new_ft_T1, lambda: ft)
@@ -218,6 +260,7 @@ def minimize(
     selected_hes=None,
     selected_faces=None,
     optimization_target: OptimizationTarget = OptimizationTarget.VERTICES,
+    update_t1_func: UpdateT1Func = update_T1,
 ) -> tuple[tuple[Array, Array, Array, Array, Array, Array], tuple[Array, Array]]:
     # ensure width and height are hashable...
     width = float(width)
@@ -254,6 +297,7 @@ def minimize(
             tolerance=tolerance,
             patience=patience,
             optimization_target=optimization_target,
+            update_t1_func=update_t1_func,
         )
     )
 
@@ -276,6 +320,7 @@ def inner_opt(
     selected_verts=None,
     selected_hes=None,
     selected_faces=None,
+    update_t1_func: UpdateT1Func = update_T1,
 ) -> tuple[tuple[Array, Array, Array], Array]:
     # Use the general minimize function with VERTICES (optimize vertTable)
     (vt_f, ht_f, ft_f, vp_f, hp_f, fp_f), (L_hist_full, step_f_array) = minimize(
@@ -297,6 +342,7 @@ def inner_opt(
         selected_hes=selected_hes,
         selected_faces=selected_faces,
         optimization_target=OptimizationTarget.VERTICES,
+        update_t1_func=update_t1_func,
     )
 
     # Convert the JAX array step_f to a Python integer
@@ -332,8 +378,9 @@ def cost_ad(
     selected_hes=None,
     selected_faces=None,
     image_target=None,
+    update_t1_func: UpdateT1Func = update_T1,
 ):
-    (vertTable, heTable, faceTable), L_in = inner_opt(
+    (vertTable, heTable, faceTable), _loss = inner_opt(
         vertTable,
         heTable,
         faceTable,
@@ -351,6 +398,7 @@ def cost_ad(
         selected_verts,
         selected_hes,
         selected_faces,
+        update_t1_func,
     )
 
     loss_out_value = L_out(
@@ -395,6 +443,7 @@ def outer_opt(
     selected_hes,
     selected_faces,
     image_target,
+    update_t1_func: UpdateT1Func = update_T1,
 ) -> tuple[Array, Array, Array]:
     grad_verts = grad(cost_ad, argnums=5)(
         vertTable,
@@ -419,6 +468,7 @@ def outer_opt(
         selected_hes,
         selected_faces,
         image_target,
+        update_t1_func,
     )
 
     grad_hes = grad(cost_ad, argnums=6)(
@@ -444,6 +494,7 @@ def outer_opt(
         selected_hes,
         selected_faces,
         image_target,
+        update_t1_func,
     )
 
     grad_faces = grad(cost_ad, argnums=7)(
@@ -469,6 +520,7 @@ def outer_opt(
         selected_hes,
         selected_faces,
         image_target,
+        update_t1_func,
     )
 
     params = {"vert_params": vert_params, "he_params": he_params, "face_params": face_params}
@@ -552,6 +604,7 @@ def minimize_ep(
     patience=5,  # 19, 20, 21 [STATIC]
     width=1,
     height=1,
+    update_t1_func: UpdateT1Func = update_T1,
 ) -> tuple[tuple[Array, Array, Array, Array, Array, Array], tuple[Array, Array]]:
     # 1. Helper: Bind the fixed arguments to the loss function.
     def loss_evaluated(vt, ht, ft, vp, hp, fp):
@@ -610,6 +663,7 @@ def minimize_ep(
         tolerance=tolerance,
         patience=patience,
         optimization_target=OptimizationTarget.VERTICES,
+        update_t1_func=update_t1_func,
     )
 
 
@@ -638,6 +692,7 @@ def inner_eq_prop(
     iterations_max=1000,
     tolerance=1e-3,
     patience=5,
+    update_t1_func: UpdateT1Func = update_T1,
 ) -> tuple[tuple[Array, Array, Array], Array]:
     """Wrapper to call the JIT-compiled minimize function and handle
     post-processing (slicing history).
@@ -670,6 +725,7 @@ def inner_eq_prop(
         patience,
         width,
         height,
+        update_t1_func,
     )
 
     # Convert the JAX array step_f to a Python integer for slicing
@@ -707,6 +763,7 @@ def outer_eq_prop(
     selected_faces,
     image_target,
     beta,
+    update_t1_func: UpdateT1Func = update_T1,
 ) -> tuple[Array, Array, Array]:
     (vertTable_free, heTable_free, faceTable_free), _ = inner_eq_prop(
         vertTable,
@@ -733,6 +790,7 @@ def outer_eq_prop(
         iterations_max,
         tolerance,
         patience,
+        update_t1_func,
     )
 
     (vertTable_nudged, heTable_nudged, faceTable_nudged), _ = inner_eq_prop(
@@ -760,6 +818,7 @@ def outer_eq_prop(
         iterations_max,
         tolerance,
         patience,
+        update_t1_func,
     )
 
     grad_loss_ep_free_verts = grad(loss_ep_static, argnums=5)(
@@ -913,11 +972,11 @@ def outer_implicit(
     vertTable,
     heTable,
     faceTable,
-    width: float,
-    height: float,
-    vert_params,
-    he_params,
-    face_params,
+    width,
+    height,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
     vertTable_target,
     heTable_target,
     faceTable_target,
@@ -933,14 +992,11 @@ def outer_implicit(
     selected_hes,
     selected_faces,
     image_target,
+    update_t1_func: UpdateT1Func = update_T1,
 ) -> tuple[Array, Array, Array]:
-    def L_in_flatten(
-        vertTable_flatten, heTable, faceTable, width: float, height: float, vert_params, he_params, face_params
-    ):
-        vertTable_tmp = jnp.hstack(
-            (vertTable_flatten.reshape(len(vertTable_flatten) // 2, 2), jnp.zeros((len(vertTable_flatten) // 2, 1)))
-        )
-        return L_in(vertTable_tmp, heTable, faceTable, width, height, vert_params, he_params, face_params)
+    def L_in_flatten(vertTable_flatten, heTable, faceTable, vert_params, he_params, face_params):
+        vertTable_tmp = vertTable_flatten.reshape(len(vertTable_flatten) // 2, 2)
+        return L_in(vertTable_tmp, heTable, faceTable, vert_params, he_params, face_params)
 
     (vertTable_eq, heTable_eq, faceTable_eq), _ = inner_opt(
         vertTable,
@@ -960,79 +1016,105 @@ def outer_implicit(
         selected_verts,
         selected_hes,
         selected_faces,
+        update_t1_func,
     )
 
-    H = jacfwd(grad(L_in_flatten, argnums=0), argnums=0)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
+    vert_flat_eq = vertTable_eq.flatten()
+
+    # H = d^2 L_in / d vertTable^2
+    G_op = grad(L_in_flatten, argnums=0)
+
+    dtype = vert_flat_eq.dtype
+
+    def matvec(v):
+        v_casted = jnp.asarray(v, dtype=dtype)
+        _, Hv = jvp(
+            lambda vfe: G_op(vfe, heTable_eq, faceTable_eq, vert_params, he_params, face_params),
+            (vert_flat_eq,),
+            (v_casted,),
+        )
+        return Hv
+
+    nv = len(vert_flat_eq)
+    H_np = LinearOperator((nv, nv), matvec=matvec)  # type: ignore
+
+    # Compute cross-derivatives (dL_in / d vertTable d param)
+    crossderivative_verts_op = jacfwd(G_op, argnums=3)
+    crossderivative_hes_op = jacfwd(G_op, argnums=4)
+    crossderivative_faces_op = jacfwd(G_op, argnums=5)
+
+    crossderivative_verts = crossderivative_verts_op(
+        vert_flat_eq, heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    )
+    crossderivative_hes = crossderivative_hes_op(
+        vert_flat_eq, heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    )
+    crossderivative_faces = crossderivative_faces_op(
+        vert_flat_eq, heTable_eq, faceTable_eq, vert_params, he_params, face_params
     )
 
-    crossderivative_verts = jacfwd(grad(L_in_flatten, argnums=0), argnums=5)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
-    )
-    crossderivative_hes = jacfwd(grad(L_in_flatten, argnums=0), argnums=6)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
-    )
-    crossderivative_faces = jacfwd(grad(L_in_flatten, argnums=0), argnums=7)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
-    )
+    # Convert JAX arrays to NumPy arrays for use with scipy.sparse.linalg.minres
+    # H_np = np.asarray(H) # Replaced by linear operator
+    cd_verts_np = np.asarray(crossderivative_verts)
+    cd_hes_np = np.asarray(crossderivative_hes)
+    cd_faces_np = np.asarray(crossderivative_faces)
 
-    L_in_derivative_verts = -jax.numpy.linalg.solve(H, crossderivative_verts)
-    L_in_derivative_hes = -jax.numpy.linalg.solve(H, crossderivative_hes)
-    L_in_derivative_faces = -jax.numpy.linalg.solve(H, crossderivative_faces)
+    # MINRES solves H * X = B. We want X = -H^{-1} * B, so we solve H * X = -B
 
-    grad_verts = (
-        L_in_derivative_verts.T
-        @ grad(L_out, argnums=0)(
-            vertTable_eq,
-            heTable_eq,
-            faceTable_eq,
-            width,
-            height,
-            vertTable_target,
-            heTable_target,
-            faceTable_target,
-            image_target,
-        )[:, :2].flatten()
-    )
-    grad_hes = (
-        L_in_derivative_hes.T
-        @ grad(L_out, argnums=0)(
-            vertTable_eq,
-            heTable_eq,
-            faceTable_eq,
-            width,
-            height,
-            vertTable_target,
-            heTable_target,
-            faceTable_target,
-            image_target,
-        )[:, :2].flatten()
-    )
-    grad_faces = (
-        L_in_derivative_faces.T
-        @ grad(L_out, argnums=0)(
-            vertTable_eq,
-            heTable_eq,
-            faceTable_eq,
-            width,
-            height,
-            vertTable_target,
-            heTable_target,
-            faceTable_target,
-            image_target,
-        )[:, :2].flatten()
-    )
+    b_verts = -cd_verts_np
+    L_in_derivative_verts_np, _info_v = minres(H_np, b_verts)
+
+    b_hes = -cd_hes_np
+    L_in_derivative_hes_np, _info_h = minres(H_np, b_hes)
+
+    b_faces = -cd_faces_np
+
+    b_faces_np = np.asarray(b_faces)
+    N_rhs = b_faces_np.shape[1]
+
+    Lambda_solutions = []
+    # Loop over the columns (right-hand sides)
+    for i in range(N_rhs):
+        b_vector = b_faces_np[:, i]
+        # Solve H_np * Lambda_i = b_vector
+        Lambda_i_np, _ = minres(H_np, b_vector)
+        Lambda_solutions.append(Lambda_i_np)
+    L_in_derivative_faces_np = jnp.stack(Lambda_solutions, axis=1)
+
+    # Convert solutions back to JAX arrays for the final gradient calculation
+    L_in_derivative_verts = jnp.asarray(L_in_derivative_verts_np)
+    L_in_derivative_hes = jnp.asarray(L_in_derivative_hes_np)
+    L_in_derivative_faces = jnp.asarray(L_in_derivative_faces_np)
+
+    # The term (dL_out / d vertTable) evaluated at the equilibrium
+    dL_out_dvert = grad(L_out, argnums=0)(
+        vertTable_eq,
+        heTable_eq,
+        faceTable_eq,
+        width,
+        height,
+        vertTable_target,
+        heTable_target,
+        faceTable_target,
+        image_target,
+    ).flatten()
+
+    # dL_out / d param = (dL_in_d param)^T @ (dL_out / d vertTable)
+    grad_verts = L_in_derivative_verts.T @ dL_out_dvert
+    grad_hes = L_in_derivative_hes.T @ dL_out_dvert
+    grad_faces = L_in_derivative_faces.T @ dL_out_dvert
 
     params = {"vert_params": vert_params, "he_params": he_params, "face_params": face_params}
     grads = {"vert_params": grad_verts, "he_params": grad_hes, "face_params": grad_faces}
     opt_state = solver_outer.init(params)
     updates, opt_state = solver_outer.update(grads, opt_state, params)
     updated_params = optax.apply_updates(params, updates)
-    new_vert_params: Array = updated_params["vert_params"]  # type: ignore
-    new_he_params: Array = updated_params["he_params"]  # type: ignore
-    new_face_params: Array = updated_params["face_params"]  # type: ignore
 
-    return new_vert_params, new_he_params, new_face_params
+    vert_params = updated_params["vert_params"]  # type: ignore
+    he_params = updated_params["he_params"]  # type: ignore
+    face_params = updated_params["face_params"]  # type: ignore
+
+    return vert_params, he_params, face_params
 
 
 ##########################
@@ -1046,9 +1128,9 @@ def outer_adjoint_state(
     faceTable,
     width,
     height,
-    vert_params,
-    he_params,
-    face_params,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
     vertTable_target,
     heTable_target,
     faceTable_target,
@@ -1064,7 +1146,8 @@ def outer_adjoint_state(
     selected_hes,
     selected_faces,
     image_target,
-):
+    update_t1_func: UpdateT1Func = update_T1,
+) -> tuple[Array, Array, Array]:
     def L_in_flatten(vertTable_flatten, heTable, faceTable, vert_params, he_params, face_params):
         vertTable_tmp = vertTable_flatten.reshape(len(vertTable_flatten) // 2, 2)
         return L_in(vertTable_tmp, heTable, faceTable, vert_params, he_params, face_params)
@@ -1087,14 +1170,26 @@ def outer_adjoint_state(
         selected_verts,
         selected_hes,
         selected_faces,
+        update_t1_func,
     )
 
     vertTable_eq_flat = vertTable_eq.flatten()
 
-    H = jacfwd(grad(L_in_flatten, argnums=0), argnums=0)(
-        vertTable_eq_flat, heTable_eq, faceTable_eq, vert_params, he_params, face_params
-    )
+    G_op = grad(L_in_flatten, argnums=0)
 
+    dtype = vertTable_eq_flat.dtype
+
+    def matvec(v):
+        v_casted = jnp.asarray(v, dtype=dtype)
+        _, Hv = jvp(
+            lambda vfe: G_op(vfe, heTable_eq, faceTable_eq, vert_params, he_params, face_params),
+            (vertTable_eq_flat,),
+            (v_casted,),
+        )
+        return Hv
+
+    nv = len(vertTable_eq_flat)
+    H_np = LinearOperator((nv, nv), matvec=matvec)  # type: ignore
     gradout = grad(L_out, argnums=0)(
         vertTable_eq,
         heTable_eq,
@@ -1107,33 +1202,22 @@ def outer_adjoint_state(
         image_target,
     ).flatten()
 
-    # # GMRES, which is robust to H being symmetric indefinite
-    # Lambda, info = gmres(H, gradout)
-    # # if info != 0:
-    # #     print(f"Warning: GMRES solver did not converge. Info code: {info}")
-
-    # --- Integration of SciPy MINRES ---
     # Convert JAX arrays to NumPy arrays for SciPy function call
-    H_np = np.asarray(H)
     gradout_np = np.asarray(gradout)
 
     # Call SciPy MINRES. H is symmetric and possibly indefinite, so MINRES is suitable.
-    Lambda_np, info = minres(H_np, gradout_np)
+    Lambda_np, _ = minres(H_np, gradout_np)
 
     # Convert the result back to a JAX array
     Lambda = jnp.asarray(Lambda_np)
 
-    if info != 0:
-        print(f"Warning: MINRES solver did not converge. Info code: {info}")
-    # --- End of MINRES Integration ---
-
-    crossderivative_verts = jacfwd(grad(L_in_flatten, argnums=0), argnums=3)(
+    crossderivative_verts = jacfwd(G_op, argnums=3)(
         vertTable_eq_flat, heTable_eq, faceTable_eq, vert_params, he_params, face_params
     )
-    crossderivative_hes = jacfwd(grad(L_in_flatten, argnums=0), argnums=4)(
+    crossderivative_hes = jacfwd(G_op, argnums=4)(
         vertTable_eq_flat, heTable_eq, faceTable_eq, vert_params, he_params, face_params
     )
-    crossderivative_faces = jacfwd(grad(L_in_flatten, argnums=0), argnums=5)(
+    crossderivative_faces = jacfwd(G_op, argnums=5)(
         vertTable_eq_flat, heTable_eq, faceTable_eq, vert_params, he_params, face_params
     )
 
@@ -1155,105 +1239,13 @@ def outer_adjoint_state(
     return vert_params, he_params, face_params
 
 
-def outer_adjoint_state_old(
-    vertTable,
-    heTable,
-    faceTable,
-    width: float,
-    height: float,
-    vert_params,
-    he_params,
-    face_params,
-    vertTable_target,
-    heTable_target,
-    faceTable_target,
-    L_in,
-    L_out,
-    solver_inner,
-    solver_outer,
-    min_dist_T1,
-    iterations_max,
-    tolerance,
-    patience,
-    selected_verts,
-    selected_hes,
-    selected_faces,
-    image_target,
-) -> tuple[Array, Array, Array]:
-    def L_in_flatten(
-        vertTable_flatten, heTable, faceTable, width: float, height: float, vert_params, he_params, face_params
-    ):
-        vertTable_tmp = jnp.hstack(
-            (vertTable_flatten.reshape(len(vertTable_flatten) // 2, 2), jnp.zeros((len(vertTable_flatten) // 2, 1)))
-        )
-        return L_in(vertTable_tmp, heTable, faceTable, width, height, vert_params, he_params, face_params)
+class BilevelOptimizationMethod(Enum):
+    """Which optimization method to use in the bi-level optimization."""
 
-    (vertTable_eq, heTable_eq, faceTable_eq), _ = inner_opt(
-        vertTable,
-        heTable,
-        faceTable,
-        width,
-        height,
-        vert_params,
-        he_params,
-        face_params,
-        L_in,
-        solver_inner,
-        min_dist_T1,
-        iterations_max,
-        tolerance,
-        patience,
-        selected_verts,
-        selected_hes,
-        selected_faces,
-    )
-
-    H = jacfwd(grad(L_in_flatten, argnums=0), argnums=0)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
-    )
-
-    # print(jax.numpy.linalg.eig(H)[0].max())
-    # print(jax.numpy.linalg.eig(H)[0].min())
-    # print('\n')
-
-    crossderivative_verts = jacfwd(grad(L_in_flatten, argnums=5), argnums=0)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
-    )
-    crossderivative_hes = jacfwd(grad(L_in_flatten, argnums=6), argnums=0)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
-    )
-    crossderivative_faces = jacfwd(grad(L_in_flatten, argnums=7), argnums=0)(
-        vertTable_eq[:, :2].flatten(), heTable_eq, faceTable_eq, width, height, vert_params, he_params, face_params
-    )
-
-    gradout = grad(L_out, argnums=0)(
-        vertTable_eq,
-        heTable_eq,
-        faceTable_eq,
-        width,
-        height,
-        vertTable_target,
-        heTable_target,
-        faceTable_target,
-        image_target,
-    )[:, :2].flatten()
-
-    Lambda = -jax.numpy.linalg.solve(H, gradout)
-
-    grad_verts = crossderivative_verts @ Lambda
-    grad_hes = crossderivative_hes @ Lambda
-    grad_faces = crossderivative_faces @ Lambda
-
-    params = {"vert_params": vert_params, "he_params": he_params, "face_params": face_params}
-    grads = {"vert_params": grad_verts, "he_params": grad_hes, "face_params": grad_faces}
-    opt_state = solver_outer.init(params)
-    updates, opt_state = solver_outer.update(grads, opt_state, params)
-    updated_params = optax.apply_updates(params, updates)
-    new_vert_params: Array = updated_params["vert_params"]  # type: ignore
-    new_he_params: Array = updated_params["he_params"]  # type: ignore
-    new_face_params: Array = updated_params["face_params"]  # type: ignore
-
-    return new_vert_params, new_he_params, new_face_params
+    AUTOMATIC_DIFFERENTIATION = "ad"
+    EQUILIBRIUM_PROPAGATION = "ep"
+    IMPLICIT_DIFFERENTIATION = "id"
+    ADJOINT_STATE = "as"
 
 
 #############
@@ -1267,9 +1259,9 @@ def bilevel_opt(
     faceTable,
     width: float,
     height: float,
-    vert_params,
-    he_params,
-    face_params,
+    vert_params: Array,
+    he_params: Array,
+    face_params: Array,
     vertTable_target,
     heTable_target,
     faceTable_target,
@@ -1287,6 +1279,7 @@ def bilevel_opt(
     image_target=None,
     beta=0.01,
     method: BilevelOptimizationMethod = BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION,
+    update_t1_func: UpdateT1Func = update_T1,
 ) -> tuple[tuple[Array, Array, Array, Array, Array, Array], Array]:
     match method:
         case BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION:
@@ -1314,6 +1307,7 @@ def bilevel_opt(
                 selected_hes,
                 selected_faces,
                 image_target,
+                update_t1_func,
             )
 
         case BilevelOptimizationMethod.EQUILIBRIUM_PROPAGATION:
@@ -1342,6 +1336,7 @@ def bilevel_opt(
                 selected_faces,
                 image_target,
                 beta,
+                update_t1_func,
             )
 
         case BilevelOptimizationMethod.IMPLICIT_DIFFERENTIATION:
@@ -1369,6 +1364,7 @@ def bilevel_opt(
                 selected_hes,
                 selected_faces,
                 image_target,
+                update_t1_func,
             )
 
         case BilevelOptimizationMethod.ADJOINT_STATE:
@@ -1396,6 +1392,7 @@ def bilevel_opt(
                 selected_hes,
                 selected_faces,
                 image_target,
+                update_t1_func,
             )
 
         case _:
@@ -1420,6 +1417,7 @@ def bilevel_opt(
         selected_verts,
         selected_hes,
         selected_faces,
+        update_t1_func,
     )
 
     return (vertTable, heTable, faceTable, vert_params, he_params, face_params), cost

@@ -17,27 +17,9 @@ from scipy.spatial import Voronoi
 from vertax.geo import get_area, get_length, get_length_with_offset, get_perimeter, update_pbc
 from vertax.mask_analysis import find_vertices_edges_faces, mask_from_image, pad
 from vertax.mesh import Mesh
-from vertax.opt import bilevel_opt, inner_opt
+from vertax.opt import InnerLossFunction, OuterLossFunction, UpdateT1Func, bilevel_opt, inner_opt
 from vertax.plot import EdgePlot, FacePlot, VertexPlot, add_colorbar, adjust_lightness, get_cmap
-
-InnerLossFunction = Callable[[Array, Array, Array, Array, Array, Array], Array]
-OuterLossFunction = Callable[
-    [
-        Array,
-        Array,
-        Array,
-        float,
-        float,
-        Array,
-        Array,
-        Array,
-        None | list[float],
-        None | list[float],
-        None | list[float],
-        Array,
-    ],
-    float,
-]
+from vertax.topo import do_not_update_T1, update_T1
 
 
 class PBCMesh(Mesh):
@@ -50,6 +32,7 @@ class PBCMesh(Mesh):
         self.width: float = 0
         self.height: float = 0
         self.MAX_EDGES_IN_ANY_FACE: int = 20
+        self._update_T1_func: UpdateT1Func = update_T1
 
     @classmethod
     def copy_mesh(cls, other_mesh: Self) -> Self:
@@ -76,6 +59,7 @@ class PBCMesh(Mesh):
         mesh.inner_solver = other_mesh.inner_solver
         mesh.outer_solver = other_mesh.outer_solver
         mesh.MAX_EDGES_IN_ANY_FACE = other_mesh.MAX_EDGES_IN_ANY_FACE
+        mesh._update_T1_func = other_mesh._update_T1_func
 
         return mesh
 
@@ -120,6 +104,19 @@ class PBCMesh(Mesh):
         self.vertices, self.edges, self.faces = update_pbc(
             self.vertices, self.edges, self.faces, self.width, self.height
         )
+
+    @property
+    def udpate_t1(self) -> bool:
+        """Whether or not update the mesh by applying T1 transitions."""
+        return self._update_T1_func != do_not_update_T1
+
+    @udpate_t1.setter
+    def update_t1(self, b: bool) -> None:
+        """Whether or not update the mesh by applying T1 transitions."""
+        if b:
+            self._update_T1_func = update_T1
+        else:
+            self._update_T1_func = do_not_update_T1
 
     def inner_opt(
         self,
@@ -168,6 +165,7 @@ class PBCMesh(Mesh):
             selected_verts=selected_vertices,
             selected_hes=selected_edges,
             selected_faces=selected_faces,
+            update_t1_func=self._update_T1_func,
         )
         return list(loss_history)
 
@@ -230,6 +228,7 @@ class PBCMesh(Mesh):
             image_target=self.image_target,
             beta=self.beta,
             method=self.bilevel_optimization_method,
+            update_t1_func=self._update_T1_func,
         )
 
         return list(loss_history)
@@ -469,6 +468,10 @@ class PBCMesh(Mesh):
         vertices_size: float = 20,
     ) -> None:
         """Plot the mesh."""
+        # Fates not used for pbc.
+        if face_plot == FacePlot.FATES:
+            face_plot = FacePlot.WHITE
+
         fig, ax = plt.subplots()
         self._plot_faces(fig, ax, face_plot, faces_cmap_name)
         self._plot_edges(fig, ax, edge_plot, edges_cmap_name, edges_width)

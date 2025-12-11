@@ -9,7 +9,7 @@ from numpy.testing import assert_allclose
 from vertax.bounded import BoundedMesh
 from vertax.cost import cost_ratio
 from vertax.energy import energy_bounded
-from vertax.mesh import BilevelOptimizationMethod
+from vertax.opt import BilevelOptimizationMethod
 
 
 def test_regression() -> None:

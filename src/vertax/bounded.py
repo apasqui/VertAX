@@ -6,15 +6,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Self
 
 import jax.numpy as jnp
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.cm import ScalarMappable
 from matplotlib.patches import Arc
 from scipy.spatial import Voronoi
 
 from vertax.geo import get_area_bounded, get_edge_length, get_surface_length
 from vertax.mesh import Mesh
 from vertax.opt_bounded import InnerLossFunction, OuterLossFunction, bilevel_opt_bounded, inner_opt_bounded
-from vertax.plot import get_cmap
+from vertax.plot import EdgePlot, FacePlot, VertexPlot, get_cmap
+from vertax.topo import do_not_update_T1, update_T1_bounded
 
 if TYPE_CHECKING:
     from jax import Array
@@ -30,6 +33,7 @@ class BoundedMesh(Mesh):
         super().__init__()
         self.angles = jnp.array([])
         self.angles_target = jnp.array([])
+        self._update_T1_func = update_T1_bounded
 
     def save_mesh(self, path: str) -> None:
         """Save mesh to a file.
@@ -88,8 +92,22 @@ class BoundedMesh(Mesh):
         mesh.patience = other_mesh.patience
         mesh.inner_solver = other_mesh.inner_solver
         mesh.outer_solver = other_mesh.outer_solver
+        mesh._update_T1_func = other_mesh._update_T1_func
 
         return mesh
+
+    @property
+    def udpate_t1(self) -> bool:
+        """Whether or not update the mesh by applying T1 transitions."""
+        return self._update_T1_func != do_not_update_T1
+
+    @udpate_t1.setter
+    def update_t1(self, b: bool) -> None:
+        """Whether or not update the mesh by applying T1 transitions."""
+        if b:
+            self._update_T1_func = update_T1_bounded
+        else:
+            self._update_T1_func = do_not_update_T1
 
     @property
     def nb_angles(self) -> int:
@@ -367,6 +385,7 @@ class BoundedMesh(Mesh):
             selected_verts=selected_vertices,
             selected_hes=selected_edges,
             selected_faces=selected_faces,
+            update_T1_func=self._update_T1_func,
         )
         return list(energies)
 
@@ -437,24 +456,40 @@ class BoundedMesh(Mesh):
             image_target=self.image_target,
             beta=self.beta,
             optimization_method=self.bilevel_optimization_method,
+            update_T1_func=self._update_T1_func,
         )
 
         return list(loss_history)
 
     def plot(  # noqa: C901
         self,
-        show_edges: bool = True,
-        show_vertices: bool = False,
-        show_fates: bool = False,
+        vertex_plot: VertexPlot = VertexPlot.BLACK,
+        edge_plot: EdgePlot = EdgePlot.BLACK,
+        face_plot: FacePlot = FacePlot.MULTICOLOR,
         show: bool = True,
         save: bool = False,
         save_path: str = "bounded_mesh.png",
+        faces_cmap_name: str = "cividis",
+        edges_cmap_name: str = "hot",
+        edges_width: float = 2,
+        vertices_cmap_name: str = "spring",
+        vertices_size: float = 20,
     ) -> None:
         """Plot the mesh."""
         vertTable = self.vertices
         heTable = self.edges
         faceTable = self.faces
         angTable = self.angles
+        face_params_cmap = matplotlib.colormaps.get_cmap("cividis")
+        edge_params_cmap = matplotlib.colormaps.get_cmap("hot")
+        vertices_params_cmap = matplotlib.colormaps.get_cmap("spring")
+
+        show_edges = edge_plot != EdgePlot.INVISIBLE
+        show_vertices = vertex_plot != VertexPlot.INVISIBLE
+        show_fates = face_plot == FacePlot.FATES
+        show_faces_parameters = face_plot == FacePlot.FACE_PAREMETER
+        show_edges_parameters = edge_plot == EdgePlot.EDGE_PAREMETER
+        show_vertices_parameters = vertex_plot == VertexPlot.VERTEX_PAREMETER
 
         cmap = get_cmap(np.max(faceTable[:, 1]) + 1, name="viridis") if show_fates else get_cmap(faceTable.shape[0])
         draw_curve_threshold = 0.01  # radians. Must be above 0 to avoid overcomplicating a simple plot
@@ -474,8 +509,10 @@ class BoundedMesh(Mesh):
                     v_target = int(heTable[he][4] + heTable[he][6] - 1)
                     pos_target = vertTable[v_target - 2]
                     arcx, arcy = _draw_arc_n_get_points(ang, pos_source, pos_target, show_edges)
-                    if show_fates:
+                    if face_plot == FacePlot.FATES:
                         plt.fill(arcx, arcy, facecolor=cmap(int(faceTable[face, 1])), alpha=0.5)
+                    elif face_plot == FacePlot.FACE_PAREMETER:
+                        plt.fill(arcx, arcy, facecolor=face_params_cmap(self.faces_params[face]), alpha=1)
                     else:
                         plt.fill(arcx, arcy, facecolor=cmap(face), alpha=0.5)
             verts_sources = np.array([pos_source])
@@ -496,6 +533,8 @@ class BoundedMesh(Mesh):
                         arcx, arcy = _draw_arc_n_get_points(ang, pos_source, pos_target, show_edges)
                         if show_fates:
                             plt.fill(arcx, arcy, facecolor=cmap(int(faceTable[face, 1])), alpha=0.5)
+                        elif show_faces_parameters:
+                            plt.fill(arcx, arcy, facecolor=face_params_cmap(self.faces_params[face]), alpha=1)
                         else:
                             plt.fill(arcx, arcy, facecolor=cmap(face), alpha=0.5)
                 all_verts.append(pos_source)
@@ -511,23 +550,35 @@ class BoundedMesh(Mesh):
 
             if show_fates:
                 plt.fill(x, y, facecolor=cmap(int(faceTable[face, 1])), alpha=0.5)
+            elif show_faces_parameters:
+                plt.fill(x, y, facecolor=face_params_cmap(self.faces_params[face]), alpha=1)
             else:
                 plt.fill(x, y, facecolor=cmap(face), alpha=0.5)
 
             if show_edges:
                 for i in range(0, len(x) - 1, 1):
                     if not surfaces[i]:
-                        plt.plot(x[i : i + 2], y[i : i + 2], "-", color="black")
+                        color = "black"
+                        if show_edges_parameters:
+                            color = edge_params_cmap(self.edges_params[i])
+                        plt.plot(x[i : i + 2], y[i : i + 2], "-", color=color)
 
         if show_vertices:
             x_all, y_all = zip(*all_verts, strict=False)
-            plt.scatter(x_all, y_all, color="black")
+            color = "black"
+            if show_vertices_parameters:
+                color = vertices_params_cmap(self.vertices_params)
+                plt.colorbar(mappable=ScalarMappable(norm=None, cmap=vertices_params_cmap), ax=plt.gca())
+            plt.scatter(x_all, y_all, color=color)
+
+        plt.colorbar(mappable=ScalarMappable(norm=None, cmap=edge_params_cmap), ax=plt.gca())
+        plt.colorbar(mappable=ScalarMappable(norm=None, cmap=face_params_cmap), ax=plt.gca())
 
         # unlike the pbc case, here is not easy to know a priori
         # what the limits of the progressively optimized cell cluster will be (across a stack of images)
         plt.xlim([-1.5, self.width + 0.5])
         plt.ylim([-1.5, self.height + 0.5])
-        plt.gca().set_aspect("equal")
+        plt.gca().set_aspect((self.height + 2) / (self.width + 2))
 
         if save:
             plt.savefig(save_path)  # format maybe should be left as a choice
