@@ -327,3 +327,9 @@ def get_area_bounded(face: Array, vertTable: Array, angTable: Array, heTable: Ar
     _, final_res, _ = final_carry
 
     return 0.5 * jnp.sum(jnp.abs(final_res))
+
+
+@jit
+def get_perimeter_bounded(face: Array, vertTable: Array, angTable: Array, heTable: Array, faceTable: Array) -> Array:
+    """Get the perimeters of given faces."""
+    ...

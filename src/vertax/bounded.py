@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Literal, Self
 
+import jax
 import jax.numpy as jnp
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.cm import ScalarMappable
-from matplotlib.patches import Arc
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from scipy.spatial import Voronoi
 
-from vertax.geo import get_area_bounded, get_edge_length, get_surface_length
+from vertax.geo import get_area_bounded, get_edge_length, get_perimeter_bounded, get_surface_length
 from vertax.mesh import Mesh
 from vertax.opt_bounded import InnerLossFunction, OuterLossFunction, bilevel_opt_bounded, inner_opt_bounded
-from vertax.plot import EdgePlot, FacePlot, VertexPlot, get_cmap
+from vertax.plot import EdgePlot, FacePlot, VertexPlot, add_colorbar, adjust_lightness, get_cmap
 from vertax.topo import do_not_update_T1, update_T1_bounded
 
 if TYPE_CHECKING:
@@ -114,17 +116,36 @@ class BoundedMesh(Mesh):
         """Get the number of angles of the mesh."""
         return len(self.angles)
 
-    def get_length(self, half_edge_id: int) -> float:
+    def get_length(self, half_edge_id: Array) -> Array:
         """Get the length of an edge."""
-        return get_edge_length(half_edge_id, self.vertices, self.edges) + get_surface_length(
-            half_edge_id, self.vertices, self.angles, self.edges
-        )
+        vertTable = jnp.vstack([jnp.array([[0.0, 0.0], [1.0, 1.0]]), self.vertices])
+        angTable = jnp.repeat(self.angles, 2)
 
-    def get_area(self, face_id: int) -> float:
+        def _get_length(half_edge_id: Array) -> Array:
+            return get_edge_length(half_edge_id, vertTable, self.edges) + get_surface_length(
+                half_edge_id, vertTable, angTable, self.edges
+            )
+
+        return jax.vmap(_get_length)(half_edge_id)
+
+    def get_perimeter(self, face_id: Array) -> Array:
         """Get the area of a face."""
-        return float(
-            get_area_bounded(face_id, self.vertices, self.edges, self.faces, self.width, self.height)
-        )  # if bug maybe remove the conversion to a float.
+        raise NotImplementedError
+
+        def _get_perimeter(face_id: Array) -> Array:
+            return get_perimeter_bounded(face_id, self.vertices, self.angles, self.edges, self.faces)
+
+        return jax.vmap(_get_perimeter)(face_id)
+
+    def get_area(self, face_id: Array) -> Array:
+        """Get the area of a face."""
+        vertTable = jnp.vstack([jnp.array([[0.0, 0.0], [1.0, 1.0]]), self.vertices])
+        angTable = jnp.repeat(self.angles, 2)
+
+        def _get_area(face_id: Array) -> Array:
+            return get_area_bounded(face_id, vertTable, angTable, self.edges, self.faces)
+
+        return jax.vmap(_get_area)(face_id)
 
     @classmethod
     def from_random_seeds(cls, nb_seeds: int, width: float, height: float, random_key: int) -> Self:
@@ -461,124 +482,39 @@ class BoundedMesh(Mesh):
 
         return list(loss_history)
 
-    def plot(  # noqa: C901
+    def plot(
         self,
         vertex_plot: VertexPlot = VertexPlot.BLACK,
         edge_plot: EdgePlot = EdgePlot.BLACK,
         face_plot: FacePlot = FacePlot.MULTICOLOR,
+        vertex_parameters_name: str = "",
+        edge_parameters_name: str = "",
+        face_parameters_name: str = "",
         show: bool = True,
         save: bool = False,
         save_path: str = "bounded_mesh.png",
         faces_cmap_name: str = "cividis",
-        edges_cmap_name: str = "hot",
+        edges_cmap_name: str = "viridis",
         edges_width: float = 2,
         vertices_cmap_name: str = "spring",
         vertices_size: float = 20,
+        title: str = "",
     ) -> None:
-        """Plot the mesh."""
-        vertTable = self.vertices
-        heTable = self.edges
-        faceTable = self.faces
-        angTable = self.angles
-        face_params_cmap = matplotlib.colormaps.get_cmap("cividis")
-        edge_params_cmap = matplotlib.colormaps.get_cmap("hot")
-        vertices_params_cmap = matplotlib.colormaps.get_cmap("spring")
-
-        show_edges = edge_plot != EdgePlot.INVISIBLE
-        show_vertices = vertex_plot != VertexPlot.INVISIBLE
-        show_fates = face_plot == FacePlot.FATES
-        show_faces_parameters = face_plot == FacePlot.FACE_PAREMETER
-        show_edges_parameters = edge_plot == EdgePlot.EDGE_PAREMETER
-        show_vertices_parameters = vertex_plot == VertexPlot.VERTEX_PAREMETER
-
-        cmap = get_cmap(np.max(faceTable[:, 1]) + 1, name="viridis") if show_fates else get_cmap(faceTable.shape[0])
-        draw_curve_threshold = 0.01  # radians. Must be above 0 to avoid overcomplicating a simple plot
-
-        all_verts = []
-        for face in range(faceTable.shape[0]):
-            surfaces = []
-            is_surface = False
-            start_he = int(faceTable[face, 0])
-            he = start_he
-            v_source = int(heTable[he][3] + heTable[he][5])
-            pos_source = vertTable[v_source - 2]
-            if heTable[he][3] == 0:
-                ang = float(angTable[he // 2])
-                if ang > draw_curve_threshold:
-                    is_surface = True
-                    v_target = int(heTable[he][4] + heTable[he][6] - 1)
-                    pos_target = vertTable[v_target - 2]
-                    arcx, arcy = _draw_arc_n_get_points(ang, pos_source, pos_target, show_edges)
-                    if face_plot == FacePlot.FATES:
-                        plt.fill(arcx, arcy, facecolor=cmap(int(faceTable[face, 1])), alpha=0.5)
-                    elif face_plot == FacePlot.FACE_PAREMETER:
-                        plt.fill(arcx, arcy, facecolor=face_params_cmap(self.faces_params[face]), alpha=1)
-                    else:
-                        plt.fill(arcx, arcy, facecolor=cmap(face), alpha=0.5)
-            verts_sources = np.array([pos_source])
-            all_verts.append(pos_source)
-            surfaces.append(is_surface)
-            he = int(heTable[he][1])
-
-            while he != start_he:
-                is_surface = False
-                v_source = int(heTable[he][3] + heTable[he][5])
-                pos_source = vertTable[v_source - 2]
-                if heTable[he][3] == 0:
-                    ang = float(angTable[he // 2])
-                    if ang > draw_curve_threshold:
-                        is_surface = True
-                        v_target = int(heTable[he][4] + heTable[he][6] - 1)
-                        pos_target = vertTable[v_target - 2]
-                        arcx, arcy = _draw_arc_n_get_points(ang, pos_source, pos_target, show_edges)
-                        if show_fates:
-                            plt.fill(arcx, arcy, facecolor=cmap(int(faceTable[face, 1])), alpha=0.5)
-                        elif show_faces_parameters:
-                            plt.fill(arcx, arcy, facecolor=face_params_cmap(self.faces_params[face]), alpha=1)
-                        else:
-                            plt.fill(arcx, arcy, facecolor=cmap(face), alpha=0.5)
-                all_verts.append(pos_source)
-                verts_sources = np.concatenate([verts_sources, pos_source[None]], axis=0)
-                surfaces.append(is_surface)
-                he = int(heTable[he][1])
-
-            v_source = int(heTable[he][3] + heTable[he][5])
-            pos_source = vertTable[v_source - 2]
-            verts_sources = np.concatenate([verts_sources, pos_source[None]], axis=0)
-
-            x, y = zip(*verts_sources, strict=False)
-
-            if show_fates:
-                plt.fill(x, y, facecolor=cmap(int(faceTable[face, 1])), alpha=0.5)
-            elif show_faces_parameters:
-                plt.fill(x, y, facecolor=face_params_cmap(self.faces_params[face]), alpha=1)
-            else:
-                plt.fill(x, y, facecolor=cmap(face), alpha=0.5)
-
-            if show_edges:
-                for i in range(0, len(x) - 1, 1):
-                    if not surfaces[i]:
-                        color = "black"
-                        if show_edges_parameters:
-                            color = edge_params_cmap(self.edges_params[i])
-                        plt.plot(x[i : i + 2], y[i : i + 2], "-", color=color)
-
-        if show_vertices:
-            x_all, y_all = zip(*all_verts, strict=False)
-            color = "black"
-            if show_vertices_parameters:
-                color = vertices_params_cmap(self.vertices_params)
-                plt.colorbar(mappable=ScalarMappable(norm=None, cmap=vertices_params_cmap), ax=plt.gca())
-            plt.scatter(x_all, y_all, color=color)
-
-        plt.colorbar(mappable=ScalarMappable(norm=None, cmap=edge_params_cmap), ax=plt.gca())
-        plt.colorbar(mappable=ScalarMappable(norm=None, cmap=face_params_cmap), ax=plt.gca())
-
-        # unlike the pbc case, here is not easy to know a priori
-        # what the limits of the progressively optimized cell cluster will be (across a stack of images)
-        plt.xlim([-1.5, self.width + 0.5])
-        plt.ylim([-1.5, self.height + 0.5])
-        plt.gca().set_aspect((self.height + 2) / (self.width + 2))
+        """Plot the mesh and decide to save and/or show the mesh or not."""
+        fig, _ax = self.get_plot(
+            vertex_plot,
+            edge_plot,
+            face_plot,
+            vertex_parameters_name,
+            edge_parameters_name,
+            face_parameters_name,
+            faces_cmap_name,
+            edges_cmap_name,
+            edges_width,
+            vertices_cmap_name,
+            vertices_size,
+            title,
+        )
 
         if save:
             plt.savefig(save_path)  # format maybe should be left as a choice
@@ -586,7 +522,244 @@ class BoundedMesh(Mesh):
         if show:
             plt.show()
 
-        plt.clf()
+        plt.close(fig)
+
+    def get_plot(
+        self,
+        vertex_plot: VertexPlot = VertexPlot.BLACK,
+        edge_plot: EdgePlot = EdgePlot.BLACK,
+        face_plot: FacePlot = FacePlot.MULTICOLOR,
+        vertex_parameters_name: str = "",
+        edge_parameters_name: str = "",
+        face_parameters_name: str = "",
+        faces_cmap_name: str = "cividis",
+        edges_cmap_name: str = "viridis",
+        edges_width: float = 2,
+        vertices_cmap_name: str = "spring",
+        vertices_size: float = 20,
+        title: str = "",
+    ) -> tuple[Figure, Axes]:
+        """Get the matplotlib figure and and ax for one plot."""
+        fig, _ = plt.subplots(layout="constrained")
+        ax = plt.gca()
+        self._plot_faces(fig, ax, face_plot, faces_cmap_name, face_parameters_name)
+        self._plot_edges(fig, ax, edge_plot, edges_cmap_name, edges_width, edge_parameters_name)
+        self._plot_vertices(fig, ax, vertex_plot, vertices_cmap_name, vertices_size, vertex_parameters_name)
+
+        ax.set_title(title)
+        # unlike the pbc case, here is not easy to know a priori
+        # what the limits of the progressively optimized cell cluster will be (across a stack of images)
+        ax.set_xlim(-0.5, self.width + 0.5)
+        ax.set_ylim(-0.5, self.height + 0.5)
+        ax.set_aspect((self.height + 1) / (self.width + 1))
+
+        return fig, ax
+
+    def _plot_faces(
+        self, fig: Figure, ax: Axes, face_plot: FacePlot, faces_cmap_name: str, face_parameters_name: str
+    ) -> None:
+        multicolor_cmap = self._get_multicolor_face_cmap()
+        faces_cmap = matplotlib.colormaps.get_cmap(faces_cmap_name)
+
+        v_max = 1
+        v_min = 0
+        values = jnp.array([1])
+        # set the correct colorbar if needed
+        # Get values, min and max
+        cbar_label = "Face parameter" if face_parameters_name == "" else face_parameters_name
+        match face_plot:
+            case FacePlot.FACE_PAREMETER:
+                values = self.faces_params
+            case FacePlot.AREA:
+                values = self.get_area(jnp.arange(self.nb_faces))
+                cbar_label = "Area of cell"
+            case FacePlot.PERIMETER:
+                values = self.get_perimeter(jnp.arange(self.nb_faces))
+                cbar_label = "Perimeter of cell"
+            case FacePlot.FATES:
+                values = self.faces[:, 1]
+        v_max = float(values.max())
+        v_min = float(values.min())
+        match face_plot:
+            case FacePlot.MULTICOLOR | FacePlot.WHITE | FacePlot.FATES:
+                pass
+            case _:
+                cbar = add_colorbar(fig, ax, v_min, v_max, faces_cmap)
+                cbar.ax.set_ylabel(cbar_label, rotation=270, labelpad=13)
+                cbar.ax.yaxis.set_ticks_position("left")
+
+        # Draw each face
+        for face in range(len(self.faces)):
+            match face_plot:
+                # Find correct color depending on chosen colormap
+                case FacePlot.MULTICOLOR:
+                    color = multicolor_cmap(face)
+                case FacePlot.WHITE:
+                    color = (1, 1, 1, 1)
+                case _:
+                    norm_val = 1 if v_max == v_min else (values[face] - v_min) / (v_max - v_min)
+                    color = faces_cmap(norm_val)
+            # Find face's vertices and draw the corresponding polygon.
+            face_vertices = self._get_face_vertices(face)
+            ax.fill(face_vertices[:, 0], face_vertices[:, 1], color=color)
+
+    def _get_face_vertices(self, face_id: int) -> NDArray:
+        """Get all vertices positions corresponding to a face."""
+        face_vertices = []
+
+        draw_curve_threshold = 0.01  # radians. Must be above 0 to avoid overcomplicating a simple plot
+        # one will be 0, other real id offseted by 2 as the first two values 0 and 1 are reserved
+        # initialize the loop on every face's edges.
+        start_he = int(self.faces[face_id][0])
+        he = start_he
+
+        do_while = False
+        while not do_while or (do_while and he != start_he):
+            do_while = True  # Just for the first time
+            # Always add origin point
+            v_source_id = int(self.edges[he][3] + self.edges[he][5] - 2)
+            pos_source = self.vertices[v_source_id]
+
+            face_vertices.append(pos_source)
+            ang = float(self.angles[he // 2])
+            if self.edges[he][3] != 0 or ang <= draw_curve_threshold:
+                # means it's an inside edge, we do not need to do anything,
+                # as the target will be the source of next half-edge. Or the angle is too flat.
+                pass
+            else:  # means it's an outside edge so it might be drawn as an arc
+                pass
+                # one will be 1, other real id offseted by 2 as the first two values 0 and 1 are reserved
+                # so real_id + 2 - 1
+                v_target_id = int(self.edges[he][4] + self.edges[he][6] - 3)
+                pos_target = self.vertices[v_target_id]
+                arc_points = _get_arc_with_n_points(ang, pos_source, pos_target)
+                face_vertices.extend(arc_points)
+
+            # Next edge for next loop
+            he = int(self.edges[he][1])
+
+        face_vertices.append(face_vertices[0])
+        return np.array(face_vertices)
+
+    def _get_multicolor_face_cmap(self) -> Callable[[int], tuple[float, float, float, float]]:
+        def cmap_light_hsv(n: int) -> Callable[[int], tuple[float, float, float, Literal[1]]]:
+            def light_hsv(i: int) -> tuple[float, float, float, Literal[1]]:
+                fun: Callable[[int], tuple[float, float, float, float]] = get_cmap(n, name="hsv")
+                return (*adjust_lightness(fun(i)[:3], 1.4), 1)
+
+            return light_hsv
+
+        return cmap_light_hsv(len(self.faces))
+
+    def _plot_edges(
+        self,
+        fig: Figure,
+        ax: Axes,
+        edge_plot: EdgePlot,
+        edges_cmap_name: str,
+        edges_width: float,
+        edge_parameters_name: str,
+    ) -> None:
+        if edge_plot != EdgePlot.INVISIBLE:
+            edge_params_cmap = matplotlib.colormaps.get_cmap(edges_cmap_name)
+            # set the correct colorbar
+
+            v_max = 1
+            v_min = 0
+            values = jnp.array([1])
+            # Get values, min and max
+            cbar_label = "Edge parameter" if edge_parameters_name == "" else edge_parameters_name
+            match edge_plot:
+                case EdgePlot.EDGE_PAREMETER:
+                    values = self.edges_params
+                case EdgePlot.LENGTH:
+                    values = self.get_length(jnp.arange(2 * self.nb_edges))
+                    cbar_label = "Length of edge"
+            v_max = float(values.max())
+            v_min = float(values.min())
+
+            # set the correct colorbar if needed
+            match edge_plot:
+                case EdgePlot.BLACK:
+                    pass
+                case _:
+                    cbar = add_colorbar(fig, ax, v_min, v_max, edge_params_cmap)
+                    cbar.ax.set_ylabel(cbar_label, rotation=270, labelpad=13)
+                    cbar.ax.yaxis.set_ticks_position("left")
+
+            # Draw each edge
+            for i in range(len(self.edges)):
+                he = i
+                # Find correct color depending on chosen colormap
+                match edge_plot:
+                    case EdgePlot.BLACK:
+                        color = (0, 0, 0, 1)
+                    case _:
+                        norm_val = 1 if v_max == v_min else (values[he] - v_min) / (v_max - v_min)
+                        color = edge_params_cmap(norm_val)
+                # Draw the edge with color
+                self._draw_edge(ax, he, color, edges_width)
+
+    def _draw_edge(
+        self,
+        ax: Axes,
+        he: int,
+        color: tuple[float, float, float, float] | NDArray,
+        edges_width: float,
+    ) -> None:
+        draw_curve_threshold = 0.01  # radians. Must be above 0 to avoid overcomplicating a simple plot
+
+        v_source_id = int(self.edges[he][3] + self.edges[he][5] - 2)
+        v_target_id = int(self.edges[he][4] + self.edges[he][6] - 3)
+        if v_source_id >= 0 and v_target_id >= 0:  # else = twin of surface edges
+            pos_source = self.vertices[v_source_id]
+            pos_target = self.vertices[v_target_id]
+            ang = float(self.angles[he // 2])
+
+            if self.edges[he][3] != 0 or ang <= draw_curve_threshold:
+                points = np.array([pos_source, pos_target])
+            else:
+                points = np.vstack(
+                    (pos_source, np.array(_get_arc_with_n_points(ang, pos_source, pos_target)), pos_target)
+                )
+            x = points[:, 0]
+            y = points[:, 1]
+            ax.plot(x, y, color=color, linewidth=edges_width)
+
+    def _plot_vertices(
+        self,
+        fig: Figure,
+        ax: Axes,
+        vertex_plot: VertexPlot,
+        vertices_cmap_name: str,
+        vertices_size: float,
+        vertex_parameters_name: str,
+    ) -> None:
+        if vertex_plot != VertexPlot.INVISIBLE:
+            # set the correct colorbar
+            vertices_params_cmap = matplotlib.colormaps.get_cmap(vertices_cmap_name)
+            v_max = 1
+            v_min = 0
+            if vertex_plot == VertexPlot.VERTEX_PAREMETER:
+                v_max = float(self.vertices_params.max())
+                v_min = float(self.vertices_params.min())
+                cbar = add_colorbar(fig, ax, v_min, v_max, vertices_params_cmap)
+                cbar_label = "Vertex parameter" if vertex_parameters_name == "" else vertex_parameters_name
+                cbar.ax.set_ylabel(cbar_label, rotation=270, labelpad=13)
+                cbar.ax.yaxis.set_ticks_position("left")
+            # Draw each vertex
+            for i, vertex in enumerate(self.vertices):
+                # Find correct color depending on chosen colormap
+                match vertex_plot:
+                    case VertexPlot.VERTEX_PAREMETER:
+                        norm_val = 1 if v_max == v_min else (self.vertices_params[i] - v_min) / (v_max - v_min)
+                        color = vertices_params_cmap(norm_val)
+                    case VertexPlot.BLACK:
+                        color = (0, 0, 0, 1)
+                    case _:
+                        color = (0, 0, 0, 0)
+                # Draw the vertex with color
+                ax.scatter(vertex[0], vertex[1], color=color, s=vertices_size)
 
 
 def _fate_selection(faceTable: NDArray, n_fates: int, rng: Generator) -> NDArray:
@@ -599,49 +772,55 @@ def _fate_selection(faceTable: NDArray, n_fates: int, rng: Generator) -> NDArray
     return np.hstack([faceTable, cell_fates[:, None]])
 
 
-def _draw_arc_n_get_points(
-    ang: float, pos_source: Array, pos_target: Array, lines: bool, n: int = 100
-) -> tuple[NDArray, NDArray]:
+def _get_arc_with_n_points(ang: float, pos_source: Array, pos_target: Array, nb_draw_points: int = 40) -> list[NDArray]:
     edge_vector = pos_target - pos_source
     edge_half_length = np.linalg.norm(edge_vector) / 2
+    # shouldn't it be ang/2 ? No, ang is between 0 and pi/2, it's already divided by 2 (if you ask me)
     radius = edge_half_length / np.sin(ang)
-    diameter = 2 * radius
+    # diameter = 2 * radius
     d_midpoint_to_center = np.sqrt(radius**2 - edge_half_length**2)
     midpoint = (pos_source + pos_target) / 2
     unit_vector = edge_vector / np.linalg.norm(edge_vector)
     unit_vector_midpoint_to_center = np.array([-unit_vector[1], unit_vector[0]])
     center = midpoint + unit_vector_midpoint_to_center * d_midpoint_to_center
-    ang_source = np.angle(np.dot((pos_source - center), np.array([1, 1j])))
+    # angles in radians between -pi and pi
+    ang_source = np.angle(np.dot((pos_source - center), np.array([1, 1j])))  # angle of a + bi
     ang_target = np.angle(np.dot((pos_target - center), np.array([1, 1j])))
-    rad2deg = 180 / np.pi
-    normalized_ang_source_degrees = ang_source * rad2deg
-    normalized_ang_target_degrees = ang_target * rad2deg
-    if normalized_ang_source_degrees < 0.0:
-        normalized_ang_source_degrees += 360
-    if normalized_ang_target_degrees < 0.0:
-        normalized_ang_target_degrees += 360
-    if lines:
-        surface_arc = Arc(
-            center,
-            diameter,
-            diameter,
-            theta1=normalized_ang_source_degrees,
-            theta2=normalized_ang_target_degrees,
-            color="black",
-            linewidth=2.0,
-        )
-        plt.gca().add_patch(surface_arc)
+    # rad2deg = 180 / np.pi
+    # # angle in degrees between -180 and 180
+    # normalized_ang_source_degrees = ang_source * rad2deg
+    # normalized_ang_target_degrees = ang_target * rad2deg
+    # # angle in degrees between 0 and 360
+    # if normalized_ang_source_degrees < 0.0:
+    #     normalized_ang_source_degrees += 360
+    # if normalized_ang_target_degrees < 0.0:
+    #     normalized_ang_target_degrees += 360
+
+    # # draw the curved edge
+    # if lines:
+    #     surface_arc = Arc(
+    #         center,
+    #         diameter,
+    #         diameter,
+    #         theta1=normalized_ang_source_degrees,
+    #         theta2=normalized_ang_target_degrees,
+    #         color="black",
+    #         linewidth=2.0,
+    #     )
+    #     plt.gca().add_patch(surface_arc)
+
+    # Now we'll take nb_draw_points the points along the curved edge and close the figure.
     tau = 2 * np.pi
-    if abs(ang_target - ang_source) > np.pi:
+    if abs(ang_target - ang_source) > np.pi:  # can it happen ?
         if ang_source < ang_target:
             ang_source += tau
         else:
             ang_target += tau
-    intermediate_angles = np.linspace(ang_source, ang_target, n, False)[1:]
-    points = [pos_source]
-    points.extend([radius * np.array([np.cos(a), np.sin(a)]) + center for a in intermediate_angles])
-    points.append(pos_target)
-    points.append(pos_source)
-    points = np.array(points)
-    x, y = points[:, 0], points[:, 1]
-    return x, y
+    intermediate_angles = np.linspace(ang_source, ang_target, nb_draw_points, False)[1:]  # without both endpoints
+    # points = [pos_source]
+    # points.extend([radius * np.array([np.cos(a), np.sin(a)]) + center for a in intermediate_angles])
+    # points.append(pos_target)
+    # points.append(pos_source)  # make it a closed form
+    # points = np.array(points)
+    # x, y = points[:, 0], points[:, 1]
+    return [np.array(radius * np.array([np.cos(a), np.sin(a)]) + center) for a in intermediate_angles]

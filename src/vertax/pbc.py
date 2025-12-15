@@ -458,29 +458,34 @@ class PBCMesh(Mesh):
         vertex_plot: VertexPlot = VertexPlot.BLACK,
         edge_plot: EdgePlot = EdgePlot.BLACK,
         face_plot: FacePlot = FacePlot.MULTICOLOR,
+        vertex_parameters_name: str = "",
+        edge_parameters_name: str = "",
+        face_parameters_name: str = "",
         show: bool = True,
         save: bool = False,
         save_path: str = "pbc_mesh.png",
         faces_cmap_name: str = "cividis",
-        edges_cmap_name: str = "hot",
+        edges_cmap_name: str = "viridis",
         edges_width: float = 2,
         vertices_cmap_name: str = "spring",
         vertices_size: float = 20,
+        title: str = "",
     ) -> None:
-        """Plot the mesh."""
-        # Fates not used for pbc.
-        if face_plot == FacePlot.FATES:
-            face_plot = FacePlot.WHITE
-
-        fig, ax = plt.subplots()
-        self._plot_faces(fig, ax, face_plot, faces_cmap_name)
-        self._plot_edges(fig, ax, edge_plot, edges_cmap_name, edges_width)
-        self._plot_vertices(fig, ax, vertex_plot, vertices_cmap_name, vertices_size)
-
-        plt.xlim([0, self.width])
-        plt.ylim([0, self.height])
-
-        ax.set_aspect(self.height / self.width)
+        """Plot the mesh and decide to save and/or show the mesh or not."""
+        fig, _ax = self.get_plot(
+            vertex_plot,
+            edge_plot,
+            face_plot,
+            vertex_parameters_name,
+            edge_parameters_name,
+            face_parameters_name,
+            faces_cmap_name,
+            edges_cmap_name,
+            edges_width,
+            vertices_cmap_name,
+            vertices_size,
+            title,
+        )
 
         if save:
             plt.savefig(save_path)
@@ -488,9 +493,44 @@ class PBCMesh(Mesh):
         if show:
             plt.show()
 
-        plt.clf()
+        plt.close(fig)
 
-    def _plot_faces(self, fig: Figure, ax: Axes, face_plot: FacePlot, faces_cmap_name: str) -> None:
+    def get_plot(
+        self,
+        vertex_plot: VertexPlot = VertexPlot.BLACK,
+        edge_plot: EdgePlot = EdgePlot.BLACK,
+        face_plot: FacePlot = FacePlot.MULTICOLOR,
+        vertex_parameters_name: str = "",
+        edge_parameters_name: str = "",
+        face_parameters_name: str = "",
+        faces_cmap_name: str = "cividis",
+        edges_cmap_name: str = "viridis",
+        edges_width: float = 2,
+        vertices_cmap_name: str = "spring",
+        vertices_size: float = 20,
+        title: str = "",
+    ) -> tuple[Figure, Axes]:
+        """Get the matplotlib figure and and ax for one plot."""
+        # Fates not used for pbc.
+        if face_plot == FacePlot.FATES:
+            face_plot = FacePlot.WHITE
+
+        fig, _ = plt.subplots(layout="constrained")
+        ax = plt.gca()
+        self._plot_faces(fig, ax, face_plot, faces_cmap_name, face_parameters_name)
+        self._plot_edges(fig, ax, edge_plot, edges_cmap_name, edges_width, edge_parameters_name)
+        self._plot_vertices(fig, ax, vertex_plot, vertices_cmap_name, vertices_size, vertex_parameters_name)
+
+        ax.set_title(title)
+        ax.set_aspect(self.height / self.width)
+        ax.set_xlim(0, self.width)
+        ax.set_ylim(0, self.height)
+
+        return fig, ax
+
+    def _plot_faces(
+        self, fig: Figure, ax: Axes, face_plot: FacePlot, faces_cmap_name: str, face_parameters_name: str
+    ) -> None:
         multicolor_cmap = self._get_multicolor_face_cmap()
         faces_cmap = matplotlib.colormaps.get_cmap(faces_cmap_name)
 
@@ -499,20 +539,25 @@ class PBCMesh(Mesh):
         values = jnp.array([1])
         # set the correct colorbar if needed
         # Get values, min and max
+        cbar_label = "Face parameter" if face_parameters_name == "" else face_parameters_name
         match face_plot:
             case FacePlot.FACE_PAREMETER:
                 values = self.faces_params
             case FacePlot.AREA:
                 values = self.get_area(jnp.arange(self.nb_faces))
+                cbar_label = "Area of cell"
             case FacePlot.PERIMETER:
                 values = self.get_perimeter(jnp.arange(self.nb_faces))
+                cbar_label = "Perimeter of cell"
         v_max = float(values.max())
         v_min = float(values.min())
         match face_plot:
             case FacePlot.MULTICOLOR | FacePlot.WHITE:
                 pass
             case _:
-                add_colorbar(fig, ax, v_min, v_max, faces_cmap)
+                cbar = add_colorbar(fig, ax, v_min, v_max, faces_cmap)
+                cbar.ax.set_ylabel(cbar_label, rotation=270, labelpad=13)
+                cbar.ax.yaxis.set_ticks_position("left")
 
         # Draw each face
         for face in range(len(self.faces)):
@@ -596,7 +641,15 @@ class PBCMesh(Mesh):
 
         return cmap_light_hsv(len(self.faces))
 
-    def _plot_edges(self, fig: Figure, ax: Axes, edge_plot: EdgePlot, edges_cmap_name: str, edges_width: float) -> None:
+    def _plot_edges(
+        self,
+        fig: Figure,
+        ax: Axes,
+        edge_plot: EdgePlot,
+        edges_cmap_name: str,
+        edges_width: float,
+        edge_parameters_name: str,
+    ) -> None:
         if edge_plot != EdgePlot.INVISIBLE:
             edge_params_cmap = matplotlib.colormaps.get_cmap(edges_cmap_name)
             # set the correct colorbar
@@ -606,11 +659,13 @@ class PBCMesh(Mesh):
             values = jnp.array([1])
             # set the correct colorbar if needed
             # Get values, min and max
+            cbar_label = "Edge parameter" if edge_parameters_name == "" else edge_parameters_name
             match edge_plot:
                 case EdgePlot.EDGE_PAREMETER:
                     values = self.edges_params
                 case EdgePlot.LENGTH:
                     values = self.get_length(jnp.arange(2 * self.nb_edges))
+                    cbar_label = "Length of edge"
             v_max = float(values.max())
             v_min = float(values.min())
 
@@ -618,7 +673,9 @@ class PBCMesh(Mesh):
                 case EdgePlot.BLACK:
                     pass
                 case _:
-                    add_colorbar(fig, ax, v_min, v_max, edge_params_cmap)
+                    cbar = add_colorbar(fig, ax, v_min, v_max, edge_params_cmap)
+                    cbar.ax.set_ylabel(cbar_label, rotation=270, labelpad=13)
+                    cbar.ax.yaxis.set_ticks_position("left")
 
             # Draw each edge
             for i, edge_entry in enumerate(self.edges):
@@ -653,7 +710,13 @@ class PBCMesh(Mesh):
         ax.plot(x, y, color=color, linewidth=edges_width)
 
     def _plot_vertices(
-        self, fig: Figure, ax: Axes, vertex_plot: VertexPlot, vertices_cmap_name: str, vertices_size: float
+        self,
+        fig: Figure,
+        ax: Axes,
+        vertex_plot: VertexPlot,
+        vertices_cmap_name: str,
+        vertices_size: float,
+        vertex_parameters_name: str,
     ) -> None:
         if vertex_plot != VertexPlot.INVISIBLE:
             # set the correct colorbar
@@ -663,7 +726,10 @@ class PBCMesh(Mesh):
             if vertex_plot == VertexPlot.VERTEX_PAREMETER:
                 v_max = float(self.vertices_params.max())
                 v_min = float(self.vertices_params.min())
-                add_colorbar(fig, ax, v_min, v_max, vertices_params_cmap)
+                cbar = add_colorbar(fig, ax, v_min, v_max, vertices_params_cmap)
+                cbar_label = "Vertex parameter" if vertex_parameters_name == "" else vertex_parameters_name
+                cbar.ax.set_ylabel(cbar_label, rotation=270, labelpad=13)
+                cbar.ax.yaxis.set_ticks_position("left")
             # Draw each vertex
             for i, vertex in enumerate(self.vertices):
                 # Find correct color depending on chosen colormap

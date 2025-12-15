@@ -6,6 +6,7 @@ faces.txt
 refined_and_padded_image.tiff
 segmented_image.tiff
 vertices.npy
+plot_code
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

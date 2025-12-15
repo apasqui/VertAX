@@ -4,11 +4,11 @@ from collections.abc import Callable
 from enum import Enum
 
 import matplotlib
-import matplotlib.colors as mc
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.colors import Colormap
+from matplotlib.colorbar import Colorbar
+from matplotlib.colors import Colormap, to_rgb
 from matplotlib.figure import Figure
 from matplotlib.patches import Arc
 
@@ -41,20 +41,17 @@ class VertexPlot(Enum):
     INVISIBLE = 3
 
 
-def add_colorbar(fig: Figure, ax: Axes, v_min: float, v_max: float, cmap: Colormap) -> None:
+def add_colorbar(fig: Figure, ax: Axes, v_min: float, v_max: float, cmap: Colormap) -> Colorbar:
     """Add a colorbar to the figure, with given min and max values and colormap."""
-    fake_im = ax.imshow(
-        [[1]],
-        vmin=v_min,
-        vmax=v_max,
-        cmap=cmap,
-    )
-    fig.colorbar(fake_im, ax=ax)
+    fake_im = ax.imshow([[1]], vmin=v_min, vmax=v_max, cmap=cmap)
+    colorbar = fig.colorbar(fake_im, ax=ax, shrink=0.7)
+    fake_im.set_alpha(0)
+    return colorbar
 
 
 def adjust_lightness(color: tuple[float, float, float], amount: float = 0.5) -> tuple[float, float, float]:
     """Adjust lightness of a color."""
-    color = colorsys.rgb_to_hls(*mc.to_rgb(color))
+    color = colorsys.rgb_to_hls(*to_rgb(color))
     return colorsys.hls_to_rgb(color[0], max(0, min(1, amount * color[1])), color[2])
 
 
