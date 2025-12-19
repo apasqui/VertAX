@@ -18,7 +18,14 @@ from scipy.spatial import Voronoi
 from vertax.geo import get_area, get_length, get_length_with_offset, get_perimeter, update_pbc
 from vertax.mask_analysis import find_vertices_edges_faces, mask_from_image, pad
 from vertax.mesh import Mesh
-from vertax.opt import InnerLossFunction, OuterLossFunction, UpdateT1Func, bilevel_opt, inner_opt
+from vertax.opt import (
+    BilevelOptimizationMethod,
+    InnerLossFunction,
+    OuterLossFunction,
+    UpdateT1Func,
+    bilevel_opt,
+    inner_opt,
+)
 from vertax.plot import EdgePlot, FacePlot, VertexPlot, add_colorbar, adjust_lightness, get_cmap
 from vertax.topo import do_not_update_T1, update_T1
 
@@ -30,8 +37,6 @@ class PBCMesh(Mesh):
         """Do not call the constructor."""
         super().__init__()
 
-        self.width: float = 0
-        self.height: float = 0
         self.MAX_EDGES_IN_ANY_FACE: int = 20
         self._update_T1_func: UpdateT1Func = update_T1
 
@@ -73,6 +78,8 @@ class PBCMesh(Mesh):
     ) -> None:
         """Save a mesh in separate text files that can be read by numpy.
 
+        Only save the vertices, edges and faces, not other parameters.
+
         Args:
             directory (str): Path to the directory where to save the files.
             vertices_filename (str, optional): Filename for the vertices table. Defaults to "vertTable.txt".
@@ -91,15 +98,42 @@ class PBCMesh(Mesh):
     def save_mesh(self, path: str) -> None:
         """Save mesh to a file.
 
+        All PBCMesh data is saved, except for the solvers thar are not saved.
+
         Args:
             path (str): Path to the saved file. The extension is .npz, a numpy format.
         """
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(path, allow_pickle=False, vertices=self.vertices, edges=self.edges, faces=self.faces)
+        np.savez_compressed(
+            path,
+            allow_pickle=False,
+            vertices=self.vertices,
+            edges=self.edges,
+            faces=self.faces,
+            width=self.width,
+            height=self.height,
+            vertices_params=self.vertices_params,
+            edges_params=self.edges_params,
+            faces_params=self.faces_params,
+            vertices_target=self.vertices_target,
+            edges_target=self.edges_target,
+            faces_target=self.faces_target,
+            image_target=self.image_target,
+            bilevel_optimization_method=self.bilevel_optimization_method.value,
+            beta=self.beta,
+            min_dist_T1=self.min_dist_T1,
+            max_nb_iterations=self.max_nb_iterations,
+            tolerance=self.tolerance,
+            patience=self.patience,
+            MAX_EDGES_IN_ANY_FACE=self.MAX_EDGES_IN_ANY_FACE,
+            update_t1=self.update_t1,
+        )
 
     @classmethod
     def load_mesh(cls, path: str) -> Self:
         """Load a mesh from a file.
+
+        All PBCMesh data is reloaded, except for the solvers thar are not saved.
 
         Args:
             path (str): Path to the mesh file (.npz), numpy format.
@@ -110,6 +144,22 @@ class PBCMesh(Mesh):
         mesh_file = np.load(path)
         mesh = cls._create()
         mesh.vertices, mesh.edges, mesh.faces = mesh_file["vertices"], mesh_file["edges"], mesh_file["faces"]
+        mesh.width, mesh.height = mesh_file["width"], mesh_file["height"]
+        mesh.vertices_params = mesh_file["vertices_params"]
+        mesh.edges_params = mesh_file["edges_params"]
+        mesh.faces_params = mesh_file["faces_params"]
+        mesh.vertices_target = mesh_file["vertices_target"]
+        mesh.edges_target = mesh_file["edges_target"]
+        mesh.faces_target = mesh_file["faces_target"]
+        mesh.image_target = mesh_file["image_target"]
+        mesh.bilevel_optimization_method = BilevelOptimizationMethod(mesh_file["bilevel_optimization_method"])
+        mesh.beta = mesh_file["beta"]
+        mesh.min_dist_T1 = mesh_file["min_dist_T1"]
+        mesh.max_nb_iterations = mesh_file["max_nb_iterations"]
+        mesh.tolerance = mesh_file["tolerance"]
+        mesh.patience = mesh_file["patience"]
+        mesh.MAX_EDGES_IN_ANY_FACE = mesh_file["MAX_EDGES_IN_ANY_FACE"]
+        mesh.update_t1 = mesh_file["update_t1"]
         return mesh
 
     @classmethod
@@ -121,6 +171,8 @@ class PBCMesh(Mesh):
         faces_filename: str = "faceTable.txt",
     ) -> Self:
         """Load a mesh from text files.
+
+        Only load the vertices, edges and faces, not other parameters.
 
         Args:
             directory (str): Directory where the text files are stored.
@@ -530,6 +582,8 @@ class PBCMesh(Mesh):
         pbc_mesh.vertices = jnp.array(vertices, dtype=np.float32)
         pbc_mesh.edges = jnp.array(edges, dtype=np.int32)
         pbc_mesh.faces = jnp.array(faces, dtype=np.int32)
+        pbc_mesh.width = 2 * width
+        pbc_mesh.height = 2 * height
 
         return pbc_mesh
 

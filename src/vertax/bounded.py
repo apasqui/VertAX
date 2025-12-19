@@ -17,6 +17,7 @@ from scipy.spatial import Voronoi
 
 from vertax.geo import get_area_bounded, get_edge_length, get_perimeter_bounded, get_surface_length
 from vertax.mesh import Mesh
+from vertax.opt import BilevelOptimizationMethod
 from vertax.opt_bounded import InnerLossFunction, OuterLossFunction, bilevel_opt_bounded, inner_opt_bounded
 from vertax.plot import EdgePlot, FacePlot, VertexPlot, add_colorbar, adjust_lightness, get_cmap
 from vertax.topo import do_not_update_T1, update_T1_bounded
@@ -47,6 +48,8 @@ class BoundedMesh(Mesh):
     ) -> None:
         """Save a mesh in separate text files that can be read by numpy.
 
+        Only save the vertices, angles, edges and faces, not other parameters.
+
         Args:
             directory (str): Path to the directory where to save the files.
             vertices_filename (str, optional): Filename for the vertices table. Defaults to "vertTable.txt".
@@ -68,17 +71,43 @@ class BoundedMesh(Mesh):
     def save_mesh(self, path: str) -> None:
         """Save mesh to a file.
 
+        All BoundedMesh data is saved, except for the solvers that are not saved.
+
         Args:
             path (str): Path to the saved file. The extension is .npz.
         """
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
-            path, allow_pickle=False, vertices=self.vertices, edges=self.edges, faces=self.faces, angles=self.angles
+            path,
+            allow_pickle=False,
+            vertices=self.vertices,
+            edges=self.edges,
+            faces=self.faces,
+            angles=self.angles,
+            width=self.width,
+            height=self.height,
+            vertices_params=self.vertices_params,
+            edges_params=self.edges_params,
+            faces_params=self.faces_params,
+            vertices_target=self.vertices_target,
+            edges_target=self.edges_target,
+            faces_target=self.faces_target,
+            angles_target=self.angles_target,
+            image_target=self.image_target,
+            bilevel_optimization_method=self.bilevel_optimization_method.value,
+            beta=self.beta,
+            min_dist_T1=self.min_dist_T1,
+            max_nb_iterations=self.max_nb_iterations,
+            tolerance=self.tolerance,
+            patience=self.patience,
+            update_t1=self.update_t1,
         )
 
     @classmethod
     def load_mesh(cls, path: str) -> Self:
         """Load a mesh from a file.
+
+        All BoundedMesh data is reloaded, except for the solvers that are not saved.
 
         Args:
             path (str): Path to the mesh file (.npz).
@@ -94,6 +123,23 @@ class BoundedMesh(Mesh):
             mesh_file["faces"],
             mesh_file["angles"],
         )
+        mesh.width = mesh_file["width"]
+        mesh.height = mesh_file["height"]
+        mesh.vertices_params = mesh_file["vertices_params"]
+        mesh.edges_params = mesh_file["edges_params"]
+        mesh.faces_params = mesh_file["faces_params"]
+        mesh.vertices_target = mesh_file["vertices_target"]
+        mesh.edges_target = mesh_file["edges_target"]
+        mesh.faces_target = mesh_file["faces_target"]
+        mesh.angles_target = mesh_file["angles_target"]
+        mesh.image_target = mesh_file["image_target"]
+        mesh.bilevel_optimization_method = BilevelOptimizationMethod(mesh_file["bilevel_optimization_method"])
+        mesh.beta = mesh_file["beta"]
+        mesh.min_dist_T1 = mesh_file["min_dist_T1"]
+        mesh.max_nb_iterations = mesh_file["max_nb_iterations"]
+        mesh.tolerance = mesh_file["tolerance"]
+        mesh.patience = mesh_file["patience"]
+        mesh.update_t1 = mesh_file["update_t1"]
         return mesh
 
     @classmethod
@@ -106,6 +152,8 @@ class BoundedMesh(Mesh):
         faces_filename: str = "faceTable.txt",
     ) -> Self:
         """Load a mesh from text files.
+
+        Only load the vertices, angles, edges and faces, not other parameters.
 
         Args:
             directory (str): Directory where the text files are stored.
