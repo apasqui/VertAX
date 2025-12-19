@@ -9,7 +9,7 @@ import optax
 from jax import Array, grad, jacfwd, jit, lax
 
 from vertax.opt import BilevelOptimizationMethod
-from vertax.topo import update_T1_bounded, do_not_update_T1_bounded
+from vertax.topo import update_T1_bounded
 
 InnerLossFunction = Callable[
     [Array, Array, Array, Array, Array | None, Array | None, Array | None, Array, Array, Array], Array
@@ -169,7 +169,9 @@ def _minimize_bounded(  # noqa: C901
         grads = grad(L_in, argnums=jacnums)(vt, at, ht, ft, selected_verts, selected_hes, selected_faces, vp, hp, fp)
 
         # Optimizer update
-        updates, new_opt_state = solver.update(grads, opt_state)
+        updates: Array
+        new_opt_state: Array
+        updates, new_opt_state = solver.update(grads, opt_state)  # ty:ignore[invalid-assignment]
 
         # Apply updates to the chosen array on selected indices
         if argnums == 0:
@@ -664,7 +666,9 @@ def _minimize_ep_bounded(  # noqa: C901
         grads = grad(loss_evaluated, argnums=jacnums)(vt, at, ht, ft, vp, hp, fp)
 
         # Optimizer update
-        updates, new_opt_state = solver.update(grads, opt_state)
+        updates: Array
+        new_opt_state: Array
+        updates, new_opt_state = solver.update(grads, opt_state)  # ty:ignore[invalid-assignment]
 
         # Apply updates to the chosen array on selected indices
         if argnums == 0:
