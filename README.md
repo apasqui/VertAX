@@ -9,14 +9,11 @@
 <!-- Project standards and quality  -->
 
 [![Development Status](https://img.shields.io/pypi/status/vertAX.svg)](https://en.wikipedia.org/wiki/Software_release_life_cycle#Beta)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 JAX-based differentiable vertex model suitable for solving inverse problems for
 confluent tissues through bilevel optimization.
 
-If you want to refer to our documentation, please go to [vertAX.org](https://www.vertAX.org).
-
-We're working on [tutorials](https://vertAX.org/stable/tutorials/), but you can also quickly get started by looking below.
+TODO @Alessandro : more explanations ? Images ?
 
 ## installation
 
@@ -30,13 +27,60 @@ pip install "vertax"
 
 ## simple example
 
+TODO @Alessandro : explain what it does
+
+```python
+from jax import Array
+import jax.numpy as jnp
+import optax
+
+from vertax.energy import energy_shape_factor_homo
+from vertax.pbc import PBCMesh
+
+# Settings
+n_cells = 100
+# Initial condition
+L_box = jnp.sqrt(n_cells)
+width = float(L_box)
+height = float(L_box)
+# Create a mesh with periodic boundary conditions
+mesh = PBCMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=1)
+# Parameters such as tensions, target areas, ... can be attached to vertices, edges, faces.
+mesh.vertices_params = jnp.asarray([0.0])
+mesh.edges_params = jnp.asarray([0.0])
+mesh.faces_params = jnp.asarray([3.7])
+
+def energy(
+    vertTable: Array, heTable: Array, faceTable: Array, _vert_params: Array, _he_params: Array, face_params: Array
+) -> Array:
+    """We use an energy given in vertAX for this example.
+
+    But only indirectly as the loss function for an inner optimization needs a specific function signature.
+    """
+    return energy_shape_factor_homo(vertTable, heTable, faceTable, width, height, face_params)
+
+# Energy minimization
+mesh.inner_opt(loss_function_inner=energy)
+
+mesh.save_mesh("mesh.npz")
+mesh.plot()
+```
+
 ## features
 
-Check out the scripts in our [`examples` folder](examples) to see some of the functionality we're developing!
+- Forward ?
+- Inverse ?
+- AD, ID, AS, EP...
+- periodic boundary conditions from random Voronoi cells
+- periodic boundary conditions from an image
+- bounded boundaries from random seeds
+- custom energy and cost
+- plot function
+- save / load meshes
 
 ## tutorials
 
-For more details on how to use `vertAX` checkout our [tutorials](https://vertAX.org/stable/tutorials/). These are still a work in progress, but we'll be updating them regularly.
+See the [docs](docs) folder for more in-depht examples.
 
 ## citing VertAX
 
