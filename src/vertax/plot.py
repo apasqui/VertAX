@@ -17,7 +17,7 @@ class FacePlot(Enum):
     """What it is possible to show on a face."""
 
     MULTICOLOR = 1
-    FACE_PAREMETER = 2
+    FACE_PARAMETER = 2
     AREA = 3
     PERIMETER = 4
     WHITE = 5
@@ -28,7 +28,7 @@ class EdgePlot(Enum):
     """What it is possible to show on an edge."""
 
     BLACK = 1
-    EDGE_PAREMETER = 2
+    EDGE_PARAMETER = 2
     LENGTH = 3
     INVISIBLE = 4
 
@@ -37,7 +37,7 @@ class VertexPlot(Enum):
     """What it is possible to show on a vertex."""
 
     BLACK = 1
-    VERTEX_PAREMETER = 2
+    VERTEX_PARAMETER = 2
     INVISIBLE = 3
 
 

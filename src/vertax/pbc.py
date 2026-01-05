@@ -98,7 +98,7 @@ class PBCMesh(Mesh):
     def save_mesh(self, path: str) -> None:
         """Save mesh to a file.
 
-        All PBCMesh data is saved, except for the solvers thar are not saved.
+        All PBCMesh data is saved, except for the solvers that are not saved.
 
         Args:
             path (str): Path to the saved file. The extension is .npz, a numpy format.
@@ -133,7 +133,7 @@ class PBCMesh(Mesh):
     def load_mesh(cls, path: str) -> Self:
         """Load a mesh from a file.
 
-        All PBCMesh data is reloaded, except for the solvers thar are not saved.
+        All PBCMesh data is reloaded, except for the solvers that are not saved.
 
         Args:
             path (str): Path to the mesh file (.npz), numpy format.
@@ -238,11 +238,11 @@ class PBCMesh(Mesh):
         )
 
     @property
-    def udpate_t1(self) -> bool:
+    def update_t1(self) -> bool:
         """Whether or not update the mesh by applying T1 transitions."""
         return self._update_T1_func != do_not_update_T1
 
-    @udpate_t1.setter
+    @update_t1.setter
     def update_t1(self, b: bool) -> None:
         """Whether or not update the mesh by applying T1 transitions."""
         if b:
@@ -570,7 +570,7 @@ class PBCMesh(Mesh):
         vertices, edges, faces = _make_he_structure(
             2 * width,
             2 * height,
-            periodic_vertices_idx,
+            periodic_vertices_idx,  # ty:ignore[invalid-argument-type]
             periodic_vertices_pos,
             periodic_edges,
             offsets,
@@ -675,7 +675,7 @@ class PBCMesh(Mesh):
         # Get values, min and max
         cbar_label = "Face parameter" if face_parameters_name == "" else face_parameters_name
         match face_plot:
-            case FacePlot.FACE_PAREMETER:
+            case FacePlot.FACE_PARAMETER:
                 values = self.faces_params
             case FacePlot.AREA:
                 values = self.get_area(jnp.arange(self.nb_faces))
@@ -795,7 +795,7 @@ class PBCMesh(Mesh):
             # Get values, min and max
             cbar_label = "Edge parameter" if edge_parameters_name == "" else edge_parameters_name
             match edge_plot:
-                case EdgePlot.EDGE_PAREMETER:
+                case EdgePlot.EDGE_PARAMETER:
                     values = self.edges_params
                 case EdgePlot.LENGTH:
                     values = self.get_length(jnp.arange(2 * self.nb_edges))
@@ -857,7 +857,7 @@ class PBCMesh(Mesh):
             vertices_params_cmap = matplotlib.colormaps.get_cmap(vertices_cmap_name)
             v_max = 1
             v_min = 0
-            if vertex_plot == VertexPlot.VERTEX_PAREMETER:
+            if vertex_plot == VertexPlot.VERTEX_PARAMETER:
                 v_max = float(self.vertices_params.max())
                 v_min = float(self.vertices_params.min())
                 cbar = add_colorbar(fig, ax, v_min, v_max, vertices_params_cmap)
@@ -868,7 +868,7 @@ class PBCMesh(Mesh):
             for i, vertex in enumerate(self.vertices):
                 # Find correct color depending on chosen colormap
                 match vertex_plot:
-                    case VertexPlot.VERTEX_PAREMETER:
+                    case VertexPlot.VERTEX_PARAMETER:
                         norm_val = 1 if v_max == v_min else (self.vertices_params[i] - v_min) / (v_max - v_min)
                         color = vertices_params_cmap(norm_val)
                     case VertexPlot.BLACK:
@@ -923,7 +923,7 @@ def _make_periodic(  # noqa: C901
     col0_mask = (vertices[:, 0] >= 0.0) & (vertices[:, 0] <= width)
     col1_mask = (vertices[:, 1] >= 0.0) & (vertices[:, 1] <= height)
 
-    periodic_voronoi_vertices_idx: NDArray[np.int32] = np.arange(len(vertices))[col0_mask & col1_mask]
+    periodic_voronoi_vertices_idx: NDArray[np.int32] = np.arange(len(vertices))[col0_mask & col1_mask]  # ty:ignore[invalid-assignment]
     periodic_voronoi_vertices_pos: NDArray[np.float64] = vertices[col0_mask & col1_mask]
 
     edges_inside = []
@@ -1062,7 +1062,7 @@ def _make_he_structure(  # noqa: C901
         target vertex id,
         face it belongs id,
         offset x,
-        offser y.
+        offset y.
     faces records just for each face the id of one of its edges.
     """
     # HALF EDGE DATA STRUCTURE

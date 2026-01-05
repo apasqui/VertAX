@@ -210,11 +210,11 @@ class BoundedMesh(Mesh):
         return mesh
 
     @property
-    def udpate_t1(self) -> bool:
+    def update_t1(self) -> bool:
         """Whether or not update the mesh by applying T1 transitions."""
         return self._update_T1_func != do_not_update_T1
 
-    @udpate_t1.setter
+    @update_t1.setter
     def update_t1(self, b: bool) -> None:
         """Whether or not update the mesh by applying T1 transitions."""
         if b:
@@ -678,7 +678,7 @@ class BoundedMesh(Mesh):
         # Get values, min and max
         cbar_label = "Face parameter" if face_parameters_name == "" else face_parameters_name
         match face_plot:
-            case FacePlot.FACE_PAREMETER:
+            case FacePlot.FACE_PARAMETER:
                 values = self.faces_params
             case FacePlot.AREA:
                 values = self.get_area(jnp.arange(self.nb_faces))
@@ -718,7 +718,7 @@ class BoundedMesh(Mesh):
         face_vertices = []
 
         draw_curve_threshold = 0.01  # radians. Must be above 0 to avoid overcomplicating a simple plot
-        # one will be 0, other real id offseted by 2 as the first two values 0 and 1 are reserved
+        # one will be 0, other real id offsetted by 2 as the first two values 0 and 1 are reserved
         # initialize the loop on every face's edges.
         start_he = int(self.faces[face_id][0])
         he = start_he
@@ -738,7 +738,7 @@ class BoundedMesh(Mesh):
                 pass
             else:  # means it's an outside edge so it might be drawn as an arc
                 pass
-                # one will be 1, other real id offseted by 2 as the first two values 0 and 1 are reserved
+                # one will be 1, other real id offsetted by 2 as the first two values 0 and 1 are reserved
                 # so real_id + 2 - 1
                 v_target_id = int(self.edges[he][4] + self.edges[he][6] - 3)
                 pos_target = self.vertices[v_target_id]
@@ -780,7 +780,7 @@ class BoundedMesh(Mesh):
             # Get values, min and max
             cbar_label = "Edge parameter" if edge_parameters_name == "" else edge_parameters_name
             match edge_plot:
-                case EdgePlot.EDGE_PAREMETER:
+                case EdgePlot.EDGE_PARAMETER:
                     values = self.edges_params
                 case EdgePlot.LENGTH:
                     values = self.get_length(jnp.arange(2 * self.nb_edges))
@@ -850,7 +850,7 @@ class BoundedMesh(Mesh):
             vertices_params_cmap = matplotlib.colormaps.get_cmap(vertices_cmap_name)
             v_max = 1
             v_min = 0
-            if vertex_plot == VertexPlot.VERTEX_PAREMETER:
+            if vertex_plot == VertexPlot.VERTEX_PARAMETER:
                 v_max = float(self.vertices_params.max())
                 v_min = float(self.vertices_params.min())
                 cbar = add_colorbar(fig, ax, v_min, v_max, vertices_params_cmap)
@@ -861,7 +861,7 @@ class BoundedMesh(Mesh):
             for i, vertex in enumerate(self.vertices):
                 # Find correct color depending on chosen colormap
                 match vertex_plot:
-                    case VertexPlot.VERTEX_PAREMETER:
+                    case VertexPlot.VERTEX_PARAMETER:
                         norm_val = 1 if v_max == v_min else (self.vertices_params[i] - v_min) / (v_max - v_min)
                         color = vertices_params_cmap(norm_val)
                     case VertexPlot.BLACK:
