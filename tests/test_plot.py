@@ -43,7 +43,7 @@ def test_plot() -> None:
     pbc_mesh.edges_params = jnp.array(rng.random(pbc_mesh.nb_edges) * 3 + 1)
     pbc_mesh.faces_params = jnp.array(rng.random(pbc_mesh.nb_faces) * 7 + 3)
     pbc_mesh.plot(
-        vertex_plot=VertexPlot.VERTEX_PAREMETER,
+        vertex_plot=VertexPlot.VERTEX_PARAMETER,
         edge_plot=EdgePlot.LENGTH,
         face_plot=FacePlot.AREA,
         vertex_parameters_name="Random vertex parameter",

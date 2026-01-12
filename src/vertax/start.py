@@ -703,7 +703,7 @@ def create_bounded_mesh_from_seeds(  # noqa: C901
                             start_edge = (e[1], e[0])
                             visited.append(e)
                         i += 1
-                        e = edges_face[i % len(face)]
+                        e = edges_face[i % len(edges_face)]
 
                     order = 0
                     for e in ordered_face:
