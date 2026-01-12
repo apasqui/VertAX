@@ -333,11 +333,10 @@ class BoundedMesh(Mesh):
                     extra_edges = []
                     last_useful = -1
                     incomplete_new_edge = False
-                    new_edge = []  # now there
                     for vertex in face:
                         if inbound_vertices[vertex] == 1:
                             if not incomplete_new_edge:
-                                # new_edge = []  # previously here
+                                new_edge = []
                                 new_edge.append(last_useful)
                                 incomplete_new_edge = True
                         else:
@@ -723,9 +722,13 @@ class BoundedMesh(Mesh):
         start_he = int(self.faces[face_id][0])
         he = start_he
 
+        # Do the while loop at least one time and add a max iter to "catch" bugs of infinite loop (should not happen !)
         do_while = False
-        while not do_while or (do_while and he != start_he):
+        max_iter = 1000
+        nb_iter = 0
+        while not do_while or ((do_while and he != start_he) and nb_iter < max_iter):
             do_while = True  # Just for the first time
+            nb_iter += 1
             # Always add origin point
             v_source_id = int(self.edges[he][3] + self.edges[he][5] - 2)
             pos_source = self.vertices[v_source_id]
@@ -737,7 +740,6 @@ class BoundedMesh(Mesh):
                 # as the target will be the source of next half-edge. Or the angle is too flat.
                 pass
             else:  # means it's an outside edge so it might be drawn as an arc
-                pass
                 # one will be 1, other real id offsetted by 2 as the first two values 0 and 1 are reserved
                 # so real_id + 2 - 1
                 v_target_id = int(self.edges[he][4] + self.edges[he][6] - 3)
