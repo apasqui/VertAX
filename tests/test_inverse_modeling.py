@@ -35,7 +35,7 @@ def test_inverse_modeling_for_regressions() -> None:  # noqa: C901
 
     # Set periodic boundary mesh and some of its properties
     pbc_mesh = PBCMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=0)
-    # Note: those are base values so the following can be ommited
+    # Note: those are base values so the following can be omitted
     pbc_mesh.min_dist_T1 = 0.005
     pbc_mesh.max_nb_iterations = 1000
     pbc_mesh.tolerance = 1e-4
@@ -43,7 +43,7 @@ def test_inverse_modeling_for_regressions() -> None:  # noqa: C901
     pbc_mesh.inner_solver = optax.sgd(learning_rate=0.01)  # inner solver
     pbc_mesh.outer_solver = optax.adam(learning_rate=0.0001, nesterov=True)  # outer solver
     pbc_mesh.bilevel_optimization_method = BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION
-    # Other paramerters are image_target (for cost_mesh2image), beta (for EP).
+    # Other parameters are image_target (for cost_mesh2image), beta (for EP).
 
     # "old" way of doing it
     key = jax.random.PRNGKey(0)  # change the seed for different results
@@ -209,8 +209,7 @@ def test_inverse_modeling_for_regressions() -> None:  # noqa: C901
     print(f"Test inverse modelling took {elapsed_times:.2f} s.")
 
     # To create a new reference for the regression test only
-    # from vertax.start import save_mesh
-    # save_mesh("tests/reference_result_test_inverse_modeling.npz", vertTable, heTable, faceTable)
+    # pbc_mesh.save_mesh("tests/reference_result_test_inverse_modeling.npz")
 
     ref_mesh = PBCMesh.load_mesh("tests/reference_result_test_inverse_modeling.npz")
 

@@ -23,8 +23,11 @@ from vertax.opt import (
     InnerLossFunction,
     OuterLossFunction,
     UpdateT1Func,
-    bilevel_opt,
     inner_opt,
+    outer_adjoint_state,
+    outer_eq_prop,
+    outer_implicit,
+    outer_opt,
 )
 from vertax.plot import EdgePlot, FacePlot, VertexPlot, add_colorbar, adjust_lightness, get_cmap
 from vertax.topo import do_not_update_T1, update_T1
@@ -301,6 +304,141 @@ class PBCMesh(Mesh):
         )
         return list(loss_history)
 
+    def outer_opt(
+        self,
+        loss_function_inner: InnerLossFunction,
+        loss_function_outer: OuterLossFunction,
+        only_on_vertices: None | list[int] = None,
+        only_on_edges: None | list[int] = None,
+        only_on_faces: None | list[int] = None,
+    ) -> None:
+        """Outer optimization."""
+        selected_vertices, selected_edges, selected_faces = None, None, None
+        if only_on_vertices is not None:
+            selected_vertices = jnp.array(only_on_vertices)
+        if only_on_edges is not None:
+            selected_edges = jnp.array(only_on_edges)
+        if only_on_faces is not None:
+            selected_faces = jnp.array(only_on_faces)
+        match self.bilevel_optimization_method:
+            case BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION:
+                self.vertices_params, self.edges_params, self.faces_params = outer_opt(
+                    self.vertices,
+                    self.edges,
+                    self.faces,
+                    self.width,
+                    self.height,
+                    self.vertices_params,
+                    self.edges_params,
+                    self.faces_params,
+                    self.vertices_target,
+                    self.edges_target,
+                    self.faces_target,
+                    loss_function_inner,
+                    loss_function_outer,
+                    self.inner_solver,
+                    self.outer_solver,
+                    self.min_dist_T1,
+                    self.max_nb_iterations,
+                    self.tolerance,
+                    self.patience,
+                    selected_vertices,
+                    selected_edges,
+                    selected_faces,
+                    self.image_target,
+                    self._update_T1_func,
+                )
+
+            case BilevelOptimizationMethod.EQUILIBRIUM_PROPAGATION:
+                self.vertices_params, self.edges_params, self.faces_params = outer_eq_prop(
+                    self.vertices,
+                    self.edges,
+                    self.faces,
+                    self.width,
+                    self.height,
+                    self.vertices_params,
+                    self.edges_params,
+                    self.faces_params,
+                    self.vertices_target,
+                    self.edges_target,
+                    self.faces_target,
+                    loss_function_inner,
+                    loss_function_outer,
+                    self.inner_solver,
+                    self.outer_solver,
+                    self.min_dist_T1,
+                    self.max_nb_iterations,
+                    self.tolerance,
+                    self.patience,
+                    selected_vertices,
+                    selected_edges,
+                    selected_faces,
+                    self.image_target,
+                    self.beta,
+                    self._update_T1_func,
+                )
+
+            case BilevelOptimizationMethod.IMPLICIT_DIFFERENTIATION:
+                self.vertices_params, self.edges_params, self.faces_params = outer_implicit(
+                    self.vertices,
+                    self.edges,
+                    self.faces,
+                    self.width,
+                    self.height,
+                    self.vertices_params,
+                    self.edges_params,
+                    self.faces_params,
+                    self.vertices_target,
+                    self.edges_target,
+                    self.faces_target,
+                    loss_function_inner,
+                    loss_function_outer,
+                    self.inner_solver,
+                    self.outer_solver,
+                    self.min_dist_T1,
+                    self.max_nb_iterations,
+                    self.tolerance,
+                    self.patience,
+                    selected_vertices,
+                    selected_edges,
+                    selected_faces,
+                    self.image_target,
+                    self._update_T1_func,
+                )
+
+            case BilevelOptimizationMethod.ADJOINT_STATE:
+                self.vertices_params, self.edges_params, self.faces_params = outer_adjoint_state(
+                    self.vertices,
+                    self.edges,
+                    self.faces,
+                    self.width,
+                    self.height,
+                    self.vertices_params,
+                    self.edges_params,
+                    self.faces_params,
+                    self.vertices_target,
+                    self.edges_target,
+                    self.faces_target,
+                    loss_function_inner,
+                    loss_function_outer,
+                    self.inner_solver,
+                    self.outer_solver,
+                    self.min_dist_T1,
+                    self.max_nb_iterations,
+                    self.tolerance,
+                    self.patience,
+                    selected_vertices,
+                    selected_edges,
+                    selected_faces,
+                    self.image_target,
+                    self._update_T1_func,
+                )
+
+            case _:
+                msg = f"Method not recognized. Must be a BilevelOptimizationMethod. \
+                    Got {self.bilevel_optimization_method}."
+                raise ValueError(msg)
+
     def bilevel_opt(
         self,
         loss_function_inner: InnerLossFunction,
@@ -324,46 +462,8 @@ class PBCMesh(Mesh):
         Returns:
             list[float]: History of loss values during optimization.
         """
-        selected_vertices, selected_edges, selected_faces = None, None, None
-        if only_on_vertices is not None:
-            selected_vertices = jnp.array(only_on_vertices)
-        if only_on_edges is not None:
-            selected_edges = jnp.array(only_on_edges)
-        if only_on_faces is not None:
-            selected_faces = jnp.array(only_on_faces)
-        (
-            (self.vertices, self.edges, self.faces, self.vertices_params, self.edges_params, self.faces_params),
-            loss_history,
-        ) = bilevel_opt(
-            vertTable=self.vertices,
-            heTable=self.edges,
-            faceTable=self.faces,
-            width=self.width,
-            height=self.height,
-            vert_params=self.vertices_params,
-            he_params=self.edges_params,
-            face_params=self.faces_params,
-            vertTable_target=self.vertices_target,
-            heTable_target=self.edges_target,
-            faceTable_target=self.faces_target,
-            L_in=loss_function_inner,
-            L_out=loss_function_outer,
-            solver_inner=self.inner_solver,
-            solver_outer=self.outer_solver,
-            min_dist_T1=self.min_dist_T1,
-            iterations_max=self.max_nb_iterations,
-            tolerance=self.tolerance,
-            patience=self.patience,
-            selected_verts=selected_vertices,
-            selected_hes=selected_edges,
-            selected_faces=selected_faces,
-            image_target=self.image_target,
-            beta=self.beta,
-            method=self.bilevel_optimization_method,
-            update_t1_func=self._update_T1_func,
-        )
-
-        return list(loss_history)
+        self.outer_opt(loss_function_inner, loss_function_outer, only_on_vertices, only_on_edges, only_on_faces)
+        return self.inner_opt(loss_function_inner, only_on_vertices, only_on_edges, only_on_faces)
 
     @classmethod
     def periodic_voronoi_from_random_seeds(cls, nb_seeds: int, width: float, height: float, random_key: int) -> Self:
