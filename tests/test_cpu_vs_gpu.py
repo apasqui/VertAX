@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import os
 
-plot = True
-use_gpu = True
+plot = False
+use_gpu = False
 if use_gpu:
     os.environ["JAX_PLATFORM_NAME"] = "gpu"
 else:
@@ -50,7 +50,7 @@ def perform_bilevel_opt(n_cells: int, n_epochs: int) -> float:  # noqa: C901
 
     # Set periodic boundary mesh and some of its properties
     pbc_mesh = PBCMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=0)
-    # Note: those are base values so the following can be ommited
+    # Note: those are base values so the following can be omitted
     pbc_mesh.min_dist_T1 = 0.005
     pbc_mesh.max_nb_iterations = 1000
     pbc_mesh.tolerance = 1e-4
@@ -58,7 +58,7 @@ def perform_bilevel_opt(n_cells: int, n_epochs: int) -> float:  # noqa: C901
     pbc_mesh.inner_solver = optax.sgd(learning_rate=0.01)  # inner solver
     pbc_mesh.outer_solver = optax.adam(learning_rate=0.0001, nesterov=True)  # outer solver
     pbc_mesh.bilevel_optimization_method = BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION
-    # Other paramerters are image_target (for cost_mesh2image), beta (for EP).
+    # Other parameters are image_target (for cost_mesh2image), beta (for EP).
 
     # Initial condition (parameters)
     mu_tensions = 1.2
