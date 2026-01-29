@@ -17,17 +17,18 @@ from scipy.spatial import Voronoi
 
 from vertax.geo import get_any_length, get_area_bounded, get_perimeter_bounded
 from vertax.mesh import Mesh
-from vertax.opt import BilevelOptimizationMethod
+from vertax.method_enum import BilevelOptimizationMethod
 from vertax.opt_bounded import (
     InnerLossFunctionBounded,
     OuterLossFunction,
+    UpdateT1FuncBounded,
     inner_opt_bounded,
     outer_eq_prop_bounded,
     outer_implicit_bounded,
     outer_opt_bounded,
 )
 from vertax.plot import EdgePlot, FacePlot, VertexPlot, add_colorbar, adjust_lightness, get_cmap
-from vertax.topo import do_not_update_T1, update_T1_bounded
+from vertax.topo import do_not_update_T1_bounded, update_T1_bounded
 
 if TYPE_CHECKING:
     from jax import Array
@@ -41,9 +42,9 @@ class BoundedMesh(Mesh):
     def __init__(self) -> None:
         """Do not call the constructor."""
         super().__init__()
-        self.angles = jnp.array([])
-        self.angles_target = jnp.array([])
-        self._update_T1_func = update_T1_bounded
+        self.angles: Array = jnp.array([])
+        self.angles_target: Array = jnp.array([])
+        self._update_T1_func: UpdateT1FuncBounded = update_T1_bounded
 
     def save_mesh_txt(
         self,
@@ -219,7 +220,7 @@ class BoundedMesh(Mesh):
     @property
     def update_t1(self) -> bool:
         """Whether or not update the mesh by applying T1 transitions."""
-        return self._update_T1_func != do_not_update_T1
+        return self._update_T1_func != do_not_update_T1_bounded
 
     @update_t1.setter
     def update_t1(self, b: bool) -> None:
@@ -227,7 +228,7 @@ class BoundedMesh(Mesh):
         if b:
             self._update_T1_func = update_T1_bounded
         else:
-            self._update_T1_func = do_not_update_T1
+            self._update_T1_func = do_not_update_T1_bounded
 
     @property
     def nb_angles(self) -> int:
@@ -868,7 +869,7 @@ class BoundedMesh(Mesh):
         def cmap_light_hsv(n: int) -> Callable[[int], tuple[float, float, float, Literal[1]]]:
             def light_hsv(i: int) -> tuple[float, float, float, Literal[1]]:
                 fun: Callable[[int], tuple[float, float, float, float]] = get_cmap(n, name="hsv")
-                return (*adjust_lightness(fun(i)[:3], 1.4), 1)  # ty:ignore[invalid-return-type]
+                return (*adjust_lightness(fun(i)[:3], 1.4), 1)
 
             return light_hsv
 

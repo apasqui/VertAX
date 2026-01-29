@@ -14,7 +14,7 @@ import optax
 from numpy.testing import assert_allclose
 
 from vertax.energy import energy_shape_factor_homo
-from vertax.pbc import PBCMesh
+from vertax.pbc import PbcMesh
 
 
 def test_forward_modeling_for_regressions() -> None:
@@ -27,7 +27,7 @@ def test_forward_modeling_for_regressions() -> None:
     L_box = jnp.sqrt(n_cells)
     width = float(L_box)
     height = float(L_box)
-    pbc_mesh = PBCMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=1)
+    pbc_mesh = PbcMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=1)
     pbc_mesh.min_dist_T1 = 0.2
 
     # Solver
@@ -57,7 +57,7 @@ def test_forward_modeling_for_regressions() -> None:
     # To create a new reference for the regression test only
     ref_path = "tests/reference_result_test_forward_modeling.npz"
     # pbc_mesh.save_mesh(ref_path)
-    ref_mesh = PBCMesh.load_mesh(ref_path)
+    ref_mesh = PbcMesh.load_mesh(ref_path)
 
     assert_allclose(pbc_mesh.vertices, ref_mesh.vertices, rtol=0.001)
     assert_allclose(pbc_mesh.edges, ref_mesh.edges, rtol=0.001)

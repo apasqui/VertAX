@@ -29,8 +29,8 @@ from jax import vmap
 
 from vertax.cost import cost_v2v
 from vertax.geo import get_area, get_length
-from vertax.opt import BilevelOptimizationMethod
-from vertax.pbc import PBCMesh
+from vertax.method_enum import BilevelOptimizationMethod
+from vertax.pbc import PbcMesh
 
 if TYPE_CHECKING:
     from jax import Array
@@ -49,7 +49,7 @@ def perform_bilevel_opt(n_cells: int, n_epochs: int) -> float:  # noqa: C901
     MAX_EDGES_IN_ANY_FACE = 20
 
     # Set periodic boundary mesh and some of its properties
-    pbc_mesh = PBCMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=0)
+    pbc_mesh = PbcMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=0)
     # Note: those are base values so the following can be omitted
     pbc_mesh.min_dist_T1 = 0.005
     pbc_mesh.max_nb_iterations = 1000
@@ -114,7 +114,7 @@ def perform_bilevel_opt(n_cells: int, n_epochs: int) -> float:  # noqa: C901
     # )
 
     # Target (vertices)
-    pbc_mesh_target = PBCMesh.copy_mesh(pbc_mesh)
+    pbc_mesh_target = PbcMesh.copy_mesh(pbc_mesh)
 
     # Target (parameters)
     key = jax.random.PRNGKey(2)  # change the seed for different results

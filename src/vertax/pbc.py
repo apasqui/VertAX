@@ -33,7 +33,7 @@ from vertax.plot import EdgePlot, FacePlot, VertexPlot, add_colorbar, adjust_lig
 from vertax.topo import do_not_update_T1, update_T1
 
 
-class PBCMesh(Mesh):
+class PbcMesh(Mesh):
     """Periodic Boundary Condition on a mesh."""
 
     def __init__(self) -> None:
@@ -869,7 +869,7 @@ class PBCMesh(Mesh):
         def cmap_light_hsv(n: int) -> Callable[[int], tuple[float, float, float, Literal[1]]]:
             def light_hsv(i: int) -> tuple[float, float, float, Literal[1]]:
                 fun: Callable[[int], tuple[float, float, float, float]] = get_cmap(n, name="hsv")
-                return (*adjust_lightness(fun(i)[:3], 1.4), 1)  # ty:ignore[invalid-return-type]
+                return (*adjust_lightness(fun(i)[:3], 1.4), 1)
 
             return light_hsv
 

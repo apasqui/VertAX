@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import optax
 from jax import Array
 
-from vertax.opt import BilevelOptimizationMethod
+from vertax.method_enum import BilevelOptimizationMethod
 
 T = TypeVar("T")
 

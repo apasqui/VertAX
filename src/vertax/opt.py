@@ -13,6 +13,7 @@ from numpy.typing import ArrayLike
 from scipy.sparse.linalg import LinearOperator, minres
 
 from vertax.geo import update_pbc
+from vertax.method_enum import BilevelOptimizationMethod
 from vertax.topo import update_T1
 
 
@@ -1284,15 +1285,6 @@ def outer_adjoint_state(
     face_params = updated_params["face_params"]  # type: ignore
 
     return vert_params, he_params, face_params
-
-
-class BilevelOptimizationMethod(Enum):
-    """Which optimization method to use in the bi-level optimization."""
-
-    AUTOMATIC_DIFFERENTIATION = "ad"
-    EQUILIBRIUM_PROPAGATION = "ep"
-    IMPLICIT_DIFFERENTIATION = "id"
-    ADJOINT_STATE = "as"
 
 
 #############

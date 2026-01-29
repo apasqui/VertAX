@@ -13,8 +13,8 @@ from numpy.testing import assert_allclose
 
 from vertax.cost import cost_v2v
 from vertax.geo import get_area, get_length
-from vertax.opt import BilevelOptimizationMethod
-from vertax.pbc import PBCMesh
+from vertax.method_enum import BilevelOptimizationMethod
+from vertax.pbc import PbcMesh
 from vertax.start import create_mesh_from_seeds
 
 if TYPE_CHECKING:
@@ -34,7 +34,7 @@ def test_inverse_modeling_for_regressions() -> None:  # noqa: C901
     MAX_EDGES_IN_ANY_FACE = 20
 
     # Set periodic boundary mesh and some of its properties
-    pbc_mesh = PBCMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=0)
+    pbc_mesh = PbcMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=0)
     # Note: those are base values so the following can be omitted
     pbc_mesh.min_dist_T1 = 0.005
     pbc_mesh.max_nb_iterations = 1000
@@ -113,7 +113,7 @@ def test_inverse_modeling_for_regressions() -> None:  # noqa: C901
     # )
 
     # Target (vertices)
-    pbc_mesh_target = PBCMesh.copy_mesh(pbc_mesh)
+    pbc_mesh_target = PbcMesh.copy_mesh(pbc_mesh)
 
     # Target (parameters)
     key = jax.random.PRNGKey(2)  # change the seed for different results
@@ -211,7 +211,7 @@ def test_inverse_modeling_for_regressions() -> None:  # noqa: C901
     # To create a new reference for the regression test only
     # pbc_mesh.save_mesh("tests/reference_result_test_inverse_modeling.npz")
 
-    ref_mesh = PBCMesh.load_mesh("tests/reference_result_test_inverse_modeling.npz")
+    ref_mesh = PbcMesh.load_mesh("tests/reference_result_test_inverse_modeling.npz")
 
     assert_allclose(pbc_mesh.vertices, ref_mesh.vertices, rtol=0.001)
     assert_allclose(pbc_mesh.edges, ref_mesh.edges, rtol=0.001)

@@ -12,7 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from vertax.bounded import BoundedMesh
-from vertax.pbc import PBCMesh
+from vertax.pbc import PbcMesh
 from vertax.plot import EdgePlot, FacePlot, VertexPlot
 
 
@@ -37,7 +37,7 @@ def test_plot() -> None:
         title="Too much colorbar is possible !",
     )
 
-    pbc_mesh = PBCMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=1)
+    pbc_mesh = PbcMesh.periodic_voronoi_from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=1)
     rng = np.random.default_rng(1337)
     pbc_mesh.vertices_params = jnp.array(rng.random(pbc_mesh.nb_vertices) * 82 + 14)
     pbc_mesh.edges_params = jnp.array(rng.random(pbc_mesh.nb_edges) * 3 + 1)

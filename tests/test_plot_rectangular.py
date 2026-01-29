@@ -1,6 +1,6 @@
 """Manual check that a rectangular plot is working."""
 
-from vertax.pbc import PBCMesh
+from vertax.pbc import PbcMesh
 from vertax.plot import plot_mesh
 
 
@@ -12,7 +12,7 @@ def show_rectangular_mesh() -> None:
     height = 10
 
     # Initial condition
-    mesh = PBCMesh.periodic_voronoi_from_random_seeds(n_cells, width, height, random_key=1)
+    mesh = PbcMesh.periodic_voronoi_from_random_seeds(n_cells, width, height, random_key=1)
 
     plot_mesh(
         mesh.vertices,
