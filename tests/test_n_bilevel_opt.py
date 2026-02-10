@@ -1,8 +1,7 @@
-"""Test the whole pipeline of bilevel optimization with the new API."""
+"""Test the whole pipeline of n bilevel optimization with the new API."""
 
 from __future__ import annotations
 
-from time import perf_counter
 from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
@@ -21,13 +20,11 @@ if TYPE_CHECKING:
     from jax import Array
 
 
-def test_inverse_modeling_for_regressions() -> None:  # noqa: C901
-    """Check identical result of a standard test with previous results (november 2025)."""
-    t_start = perf_counter()
-
+def test_n_bilevel_opt() -> None:  # noqa: C901
+    """Check the whole function of n bilevel opt which makes a lot of things."""
     # Settings
     n_cells = 20
-    epochs = 2
+    epochs = 10
     L_box = jnp.sqrt(n_cells)
     width = float(L_box)
     height = float(L_box)
@@ -181,46 +178,25 @@ def test_inverse_modeling_for_regressions() -> None:  # noqa: C901
             + (0.5 * K_areas) * jnp.sum(areas_part)
         )
 
-    bilevel_optimizer.loss_function_inner = energy_v2
-    bilevel_optimizer.loss_function_outer = cost_v2v
-    for j in range(epochs + 1):
-        t1 = perf_counter()
-        print(
-            "epoch: "
-            + str(j)
-            + "/"
-            + str(epochs)
-            + "\t cost: "
-            + str(
-                cost_v2v(
-                    pbc_mesh.vertices,
-                    pbc_mesh.edges,
-                    pbc_mesh.faces,
-                    pbc_mesh.width,
-                    pbc_mesh.height,
-                    bilevel_optimizer.vertices_target,
-                    bilevel_optimizer.edges_target,
-                    bilevel_optimizer.faces_target,
-                )
-            )
+    def energy_metric(mesh: PbcMesh, _bilevel_opt: PbcBilevelOptimizer) -> float:
+        return float(
+            energy_v2(mesh.vertices, mesh.edges, mesh.faces, mesh.vertices_params, mesh.edges_params, mesh.faces_params)
         )
 
-        bilevel_optimizer.bilevel_optimization(pbc_mesh)
-        print(perf_counter() - t1)
+    bilevel_optimizer.add_custom_metric("Inner Energy", energy_metric)
 
-    t_end = perf_counter()
-    elapsed_times = t_end - t_start
-    print(f"Test inverse modelling took {elapsed_times:.2f} s.")
+    bilevel_optimizer.loss_function_inner = energy_v2
+    bilevel_optimizer.loss_function_outer = cost_v2v
 
-    # To create a new reference for the regression test only
-    # pbc_mesh.save_mesh("tests/reference_result_test_inverse_modeling.npz")
-
-    ref_mesh = PbcMesh.load_mesh("tests/reference_result_test_inverse_modeling.npz")
-
-    assert_allclose(pbc_mesh.vertices, ref_mesh.vertices, rtol=0.001)
-    assert_allclose(pbc_mesh.edges, ref_mesh.edges, rtol=0.001)
-    assert_allclose(pbc_mesh.faces, ref_mesh.faces, rtol=0.001)
+    bilevel_optimizer.do_n_bilevel_optimization(
+        nb_epochs=epochs,
+        mesh=pbc_mesh,
+        report_every=1,
+        also_report_to_stdout=True,
+        save_mesh_every=2,
+        save_folder="test_n_bilevel",
+    )
 
 
 if __name__ == "__main__":
-    test_inverse_modeling_for_regressions()
+    test_n_bilevel_opt()

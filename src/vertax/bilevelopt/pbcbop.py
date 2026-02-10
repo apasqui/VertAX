@@ -37,6 +37,65 @@ class PbcBilevelOptimizer(_BilevelOptimizer):
         else:
             self._update_T1_func = do_not_update_T1
 
+    def compute_outer_loss(
+        self,
+        mesh: Mesh,
+        only_on_vertices: None | list[int] = None,
+        only_on_edges: None | list[int] = None,
+        only_on_faces: None | list[int] = None,
+    ) -> float:
+        """Get the result of self.loss_function_outer called with the correct arguments."""
+        selected_vertices, selected_edges, selected_faces = self._selection_to_jax_arrays(
+            only_on_vertices, only_on_edges, only_on_faces
+        )
+        if not isinstance(mesh, PbcMesh):
+            msg = "The mesh given to a PbcBilevelOptimizer must be a PbcMesh."
+            raise ValueError(msg)
+        elif self.loss_function_outer is None:
+            msg = "The outer loss function was not defined."
+            raise AttributeError(msg)
+        return float(
+            self.loss_function_outer(
+                mesh.vertices,
+                mesh.edges,
+                mesh.faces,
+                mesh.width,
+                mesh.height,
+                self.vertices_target,
+                self.edges_target,
+                self.faces_target,
+                selected_vertices,
+                selected_edges,
+                selected_faces,
+                self.image_target,
+            )
+        )
+
+    def compute_inner_loss(
+        self,
+        mesh: Mesh,
+        _only_on_vertices: None | list[int] = None,
+        _only_on_edges: None | list[int] = None,
+        _only_on_faces: None | list[int] = None,
+    ) -> float:
+        """Get the result of self.loss_function_inner called with the correct arguments."""
+        if not isinstance(mesh, PbcMesh):
+            msg = "The mesh given to a PbcBilevelOptimizer must be a PbcMesh."
+            raise ValueError(msg)
+        elif self.loss_function_inner is None:
+            msg = "The inner loss function was not defined."
+            raise AttributeError(msg)
+        return float(
+            self.loss_function_inner(
+                mesh.vertices,
+                mesh.edges,
+                mesh.faces,
+                mesh.vertices_params,
+                mesh.edges_params,
+                mesh.faces_params,
+            )
+        )
+
     def _inner_opt(
         self,
         mesh: Mesh,
@@ -46,7 +105,7 @@ class PbcBilevelOptimizer(_BilevelOptimizer):
     ) -> list:
         """Call the correct inner optimization function for a PbcMesh."""
         if not isinstance(mesh, PbcMesh):
-            msg = "The mesh given by a PbcBilevelOptimizer must be a PbcMesh."
+            msg = "The mesh given to a PbcBilevelOptimizer must be a PbcMesh."
             raise ValueError(msg)
         elif self.loss_function_inner is None:
             msg = "The inner loss function was not defined."
@@ -86,7 +145,7 @@ class PbcBilevelOptimizer(_BilevelOptimizer):
     ) -> None:
         """Call the correct outer optimization function for a PbcMesh."""
         if not isinstance(mesh, PbcMesh):
-            msg = "The mesh given by a PbcBilevelOptimizer must be a PbcMesh."
+            msg = "The mesh given to a PbcBilevelOptimizer must be a PbcMesh."
             raise ValueError(msg)
         elif self.loss_function_inner is None:
             msg = "The inner loss function was not defined."

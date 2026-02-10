@@ -76,6 +76,21 @@ def get_cmap(n: int, name: str = "hsv") -> Callable[[int], tuple[float, float, f
     return cmap_with_n_colors
 
 
+def save_simple_xy_graph(
+    filename: str, x_data: list[float], y_data: list[float], title: str = "", x_label: str = "", y_label: str = ""
+) -> None:
+    """Save a simple line plot."""
+    fig, _ = plt.subplots(layout="constrained")
+    ax = plt.gca()
+
+    ax.set_title(title)
+    ax.set_ylabel(y_label)
+    ax.set_xlabel(x_label)
+    ax.plot(x_data, y_data)
+    plt.savefig(str(filename))
+    plt.close(fig)
+
+
 def plot_mesh(
     mesh: Mesh,
     vertex_plot: VertexPlot = VertexPlot.INVISIBLE,
