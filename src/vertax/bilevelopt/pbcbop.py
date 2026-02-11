@@ -74,9 +74,9 @@ class PbcBilevelOptimizer(_BilevelOptimizer):
     def compute_inner_loss(
         self,
         mesh: Mesh,
-        _only_on_vertices: None | list[int] = None,
-        _only_on_edges: None | list[int] = None,
-        _only_on_faces: None | list[int] = None,
+        only_on_vertices: None | list[int] = None,  # noqa: ARG002
+        only_on_edges: None | list[int] = None,  # noqa: ARG002
+        only_on_faces: None | list[int] = None,  # noqa: ARG002
     ) -> float:
         """Get the result of self.loss_function_inner called with the correct arguments."""
         if not isinstance(mesh, PbcMesh):
