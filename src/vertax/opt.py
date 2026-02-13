@@ -1135,6 +1135,9 @@ def outer_implicit(
         vertTable_target,
         heTable_target,
         faceTable_target,
+        selected_verts,
+        selected_hes,
+        selected_faces,
         image_target,
     ).flatten()
 
@@ -1247,6 +1250,9 @@ def outer_adjoint_state(
         vertTable_target,
         heTable_target,
         faceTable_target,
+        selected_verts,
+        selected_hes,
+        selected_faces,
         image_target,
     ).flatten()
 
