@@ -26,9 +26,9 @@ def test_regression() -> None:
     rng_seed = 1
     bounded_mesh = BoundedMesh.from_random_seeds(nb_seeds=n_cells, width=width, height=height, random_key=rng_seed)
     rng = np.random.default_rng(seed=rng_seed)
-    bounded_mesh.vertices_params = jnp.asarray([0.0])
+    bounded_mesh.vertices_params = jnp.asarray([0.0 for _ in range(bounded_mesh.nb_vertices)])
     bounded_mesh.edges_params = jnp.asarray(rng.random(n_edges) * 20 - 10)
-    bounded_mesh.faces_params = jnp.asarray([0.0])
+    bounded_mesh.faces_params = jnp.asarray([0.0 for _ in range(bounded_mesh.nb_faces)])
 
     bilevel_optimizer = BoundedBilevelOptimizer()
     bilevel_optimizer.min_dist_T1 = 0.025
@@ -37,7 +37,7 @@ def test_regression() -> None:
     bilevel_optimizer.max_nb_iterations = 1000
     bilevel_optimizer.tolerance = 1e-6
     bilevel_optimizer.patience = 5
-    bilevel_optimizer.bilevel_optimization_method = BilevelOptimizationMethod.AUTOMATIC_DIFFERENTIATION
+    bilevel_optimizer.bilevel_optimization_method = BilevelOptimizationMethod.EQUILIBRIUM_PROPAGATION
 
     # Energy minimization
     bilevel_optimizer.loss_function_inner = energy_bounded
