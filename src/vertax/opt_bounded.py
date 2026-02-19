@@ -3,10 +3,12 @@
 from collections.abc import Callable
 from functools import partial
 
-import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
-from jax import Array, grad, jacfwd, jit, lax
+from jax import Array, grad, jacfwd, jit, jvp, lax
+from numpy.typing import ArrayLike
+from scipy.sparse.linalg import LinearOperator, minres
 
 from vertax.method_enum import BilevelOptimizationMethod
 from vertax.topo import update_T1_bounded
@@ -1119,45 +1121,98 @@ def outer_implicit_bounded(
         update_T1_func,
     )
 
-    H = jacfwd(grad(L_in_flatten, argnums=0), argnums=0)(
-        jnp.concatenate((vertTable_eq.flatten(), angTable_eq)),
-        heTable_eq,
-        faceTable_eq,
-        vert_params,
-        he_params,
-        face_params,
+    ################################################################
+    ################            Start mod           ################
+    ################################################################
+
+    vert_flat_eq = jnp.concatenate((vertTable_eq.flatten(), angTable_eq))
+
+    # H = d^2 L_in / d vertangTable^2
+    G_op = grad(L_in_flatten, argnums=0)
+
+    dtype = vert_flat_eq.dtype
+
+    def matvec(v: ArrayLike) -> Array:
+        v_casted = jnp.asarray(v, dtype=dtype)
+        _, Hv = jvp(
+            lambda vfe: G_op(vfe, heTable_eq, faceTable_eq, vert_params, he_params, face_params),
+            (vert_flat_eq,),
+            (v_casted,),
+        )
+        return Hv
+
+    nv = len(vert_flat_eq)
+    H_np = LinearOperator((nv, nv), matvec=matvec)  # type: ignore
+
+    # Compute cross-derivatives (dL_in / d vertangTable d param)
+    crossderivative_verts_op = jacfwd(G_op, argnums=3)
+    crossderivative_hes_op = jacfwd(G_op, argnums=4)
+    crossderivative_faces_op = jacfwd(G_op, argnums=5)
+
+    crossderivative_verts = crossderivative_verts_op(
+        vert_flat_eq, heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    )
+    crossderivative_hes = crossderivative_hes_op(
+        vert_flat_eq, heTable_eq, faceTable_eq, vert_params, he_params, face_params
+    )
+    crossderivative_faces = crossderivative_faces_op(
+        vert_flat_eq, heTable_eq, faceTable_eq, vert_params, he_params, face_params
     )
 
-    crossderivative_verts = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=3)(
-        jnp.concatenate((vertTable_eq.flatten(), angTable_eq)),
-        heTable_eq,
-        faceTable_eq,
-        vert_params,
-        he_params,
-        face_params,
-    )
-    crossderivative_hes = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=4)(
-        jnp.concatenate((vertTable_eq.flatten(), angTable_eq)),
-        heTable_eq,
-        faceTable_eq,
-        vert_params,
-        he_params,
-        face_params,
-    )
-    crossderivative_faces = jacfwd(jacfwd(L_in_flatten, argnums=0), argnums=5)(
-        jnp.concatenate((vertTable_eq.flatten(), angTable_eq)),
-        heTable_eq,
-        faceTable_eq,
-        vert_params,
-        he_params,
-        face_params,
-    )
+    # Convert JAX arrays to NumPy arrays for use with scipy.sparse.linalg.minres
+    # H_np = np.asarray(H) # Replaced by linear operator
+    cd_verts_np = np.asarray(crossderivative_verts)
+    cd_hes_np = np.asarray(crossderivative_hes)
+    cd_faces_np = np.asarray(crossderivative_faces)
 
-    L_in_derivative_verts = -jax.numpy.linalg.solve(H, crossderivative_verts)
-    L_in_derivative_hes = -jax.numpy.linalg.solve(H, crossderivative_hes)
-    L_in_derivative_faces = -jax.numpy.linalg.solve(H, crossderivative_faces)
+    # MINRES solves H * X = B. We want X = -H^{-1} * B, so we solve H * X = -B
 
-    grad_verts = L_in_derivative_verts.T @ jnp.concatenate(
+    b_verts = -cd_verts_np
+    b_verts_np = np.asarray(b_verts)
+    N_rhs = b_verts.shape[1]
+
+    Lambda_solutions = []
+    # Loop over the columns (right-hand sides)
+    for i in range(N_rhs):
+        b_vector = b_verts_np[:, i]
+        # Solve H_np * Lambda_i = b_vector
+        Lambda_i_np, _ = minres(H_np, b_vector)
+        Lambda_solutions.append(Lambda_i_np)
+    L_in_derivative_verts_np = jnp.stack(Lambda_solutions, axis=1)
+
+    b_hes = -cd_hes_np
+    b_hes_np = np.asarray(b_hes)
+    N_rhs = b_hes.shape[1]
+
+    Lambda_solutions = []
+    # Loop over the columns (right-hand sides)
+    for i in range(N_rhs):
+        b_vector = b_hes_np[:, i]
+        # Solve H_np * Lambda_i = b_vector
+        Lambda_i_np, _ = minres(H_np, b_vector)
+        Lambda_solutions.append(Lambda_i_np)
+    L_in_derivative_hes_np = jnp.stack(Lambda_solutions, axis=1)
+
+    b_faces = -cd_faces_np
+    b_faces_np = np.asarray(b_faces)
+    N_rhs = b_faces_np.shape[1]
+
+    Lambda_solutions = []
+    # Loop over the columns (right-hand sides)
+    for i in range(N_rhs):
+        b_vector = b_faces_np[:, i]
+        # Solve H_np * Lambda_i = b_vector
+        Lambda_i_np, _ = minres(H_np, b_vector)
+        Lambda_solutions.append(Lambda_i_np)
+    L_in_derivative_faces_np = jnp.stack(Lambda_solutions, axis=1)
+
+    # Convert solutions back to JAX arrays for the final gradient calculation
+    L_in_derivative_verts = jnp.asarray(L_in_derivative_verts_np)
+    L_in_derivative_hes = jnp.asarray(L_in_derivative_hes_np)
+    L_in_derivative_faces = jnp.asarray(L_in_derivative_faces_np)
+
+    # The term (dL_out / d vertangTable) evaluated at the equilibrium
+    dL_out_dvertang = jnp.concatenate(
         [
             grad(L_out, argnums=0)(
                 vertTable_eq,
@@ -1183,64 +1238,18 @@ def outer_implicit_bounded(
             ),
         ]
     )
-    grad_hes = L_in_derivative_hes.T @ jnp.concatenate(
-        [
-            grad(L_out, argnums=0)(
-                vertTable_eq,
-                angTable_eq,
-                heTable_eq,
-                faceTable_eq,
-                vertTable_target,
-                angTable_target,
-                heTable_target,
-                faceTable_target,
-                image_target,
-            )[:, :2].flatten(),
-            grad(L_out, argnums=1)(
-                vertTable_eq,
-                angTable_eq,
-                heTable_eq,
-                faceTable_eq,
-                vertTable_target,
-                angTable_target,
-                heTable_target,
-                faceTable_target,
-                image_target,
-            ),
-        ]
-    )
-    grad_faces = L_in_derivative_faces.T @ jnp.concatenate(
-        [
-            grad(L_out, argnums=0)(
-                vertTable_eq,
-                angTable_eq,
-                heTable_eq,
-                faceTable_eq,
-                vertTable_target,
-                angTable_target,
-                heTable_target,
-                faceTable_target,
-                image_target,
-            )[:, :2].flatten(),
-            grad(L_out, argnums=1)(
-                vertTable_eq,
-                angTable_eq,
-                heTable_eq,
-                faceTable_eq,
-                vertTable_target,
-                angTable_target,
-                heTable_target,
-                faceTable_target,
-                image_target,
-            ),
-        ]
-    )
+
+    # dL_out / d param = (dL_in_d param)^T @ (dL_out / d vertangTable)
+    grad_verts = L_in_derivative_verts.T @ dL_out_dvertang
+    grad_hes = L_in_derivative_hes.T @ dL_out_dvertang
+    grad_faces = L_in_derivative_faces.T @ dL_out_dvertang
 
     params = {"vert_params": vert_params, "he_params": he_params, "face_params": face_params}
     grads = {"vert_params": grad_verts, "he_params": grad_hes, "face_params": grad_faces}
     opt_state = solver_outer.init(params)
     updates, opt_state = solver_outer.update(grads, opt_state, params)
     updated_params = optax.apply_updates(params, updates)
+
     vert_params = updated_params["vert_params"]  # type: ignore
     he_params = updated_params["he_params"]  # type: ignore
     face_params = updated_params["face_params"]  # type: ignore
