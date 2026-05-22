@@ -424,6 +424,51 @@ def cost_IAS(  # noqa: N802
     return jnp.sum(gamma * C_total)
 
 
+@partial(jit, static_argnums=(3, 4))
+def cost_IAS_v2v(  # noqa: N802
+    vertTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    width: float,
+    height: float,
+    vertTable_target: Array,
+    heTable_target: Array,
+    faceTable_target: Array,
+    selected_verts: Array | None = None,
+    _selected_hes: Array | None = None,
+    _selected_faces: Array | None = None,
+    _image_target: Array | None = None,
+) -> Array:
+    r"""Combined IAS + vertex-to-vertex cost.
+
+    .. math::
+        C = C_{\mathrm{IAS}} + C_{\mathrm{v2v}}.
+    """
+    return cost_IAS(
+        vertTable,
+        heTable,
+        faceTable,
+        width,
+        height,
+        vertTable_target,
+        heTable_target,
+        faceTable_target,
+    ) + cost_v2v(
+        vertTable,
+        heTable,
+        faceTable,
+        width,
+        height,
+        vertTable_target,
+        heTable_target,
+        faceTable_target,
+        selected_verts,
+        _selected_hes,
+        _selected_faces,
+        _image_target,
+    )
+
+
 # Default weights for ``cost_herve`` (see docstring).
 _HERVE_LAMBDA_1 = 1.0  # shrink contacts absent from the target
 _HERVE_LAMBDA_2 = 1.0  # match lengths on target contacts
@@ -469,6 +514,41 @@ def _vertex_weighted_adjacency(
     return bar_a, weighted
 
 
+def _cost_herve_topo(
+    vertTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    width: float,
+    height: float,
+    heTable_target: Array,
+    vertTable_target: Array,
+    faceTable_target: Array,
+    lambda_1: float,
+    lambda_2: float,
+) -> Array:
+    """Topological edge-length term of Hervé's cost."""
+    bar_curr, a_curr = _vertex_weighted_adjacency(
+        heTable, vertTable, faceTable, width, height
+    )
+    bar_tgt, a_tgt = _vertex_weighted_adjacency(
+        heTable_target, vertTable_target, faceTable_target, width, height
+    )
+    bar_tgt = stop_gradient(bar_tgt)
+    a_tgt = stop_gradient(a_tgt)
+
+    n_verts = vertTable.shape[0]
+    idx_i, idx_j = jnp.triu_indices(n_verts, k=1)
+
+    bar_c = bar_curr[idx_i, idx_j]
+    bar_t = bar_tgt[idx_i, idx_j]
+    a_c = a_curr[idx_i, idx_j]
+    a_t = a_tgt[idx_i, idx_j]
+
+    shrink_wrong = lambda_1 * a_c * (1.0 - bar_t)
+    preserve_target = lambda_2 * bar_t * (a_c - a_t) ** 2
+    return jnp.sum(shrink_wrong + preserve_target)
+
+
 @partial(jit, static_argnums=(3, 4))
 def cost_herve(
     vertTable: Array,
@@ -497,29 +577,71 @@ def cost_herve(
               \bigl[A_{\alpha\beta}(\mathbf{X}) - A_{\alpha\beta}^{\mathrm{target}}\bigr]^2.
 
     Defaults: ``lambda_1 = lambda_2 = 1`` (pure topological minimization).
-    For ``C = C_{\mathrm{geom}} + C_{\mathrm{topo}}`` with ``lambda_2 = 0``, combine
-    with ``cost_v2v`` externally.
+    For ``C = C_{\mathrm{geom}} + C_{\mathrm{topo}}`` with ``lambda_2 = 0``, use ``cost_herve_2``.
     """
-    bar_curr, a_curr = _vertex_weighted_adjacency(
-        heTable, vertTable, faceTable, width, height
+    return _cost_herve_topo(
+        vertTable,
+        heTable,
+        faceTable,
+        width,
+        height,
+        heTable_target,
+        vertTable_target,
+        faceTable_target,
+        _HERVE_LAMBDA_1,
+        _HERVE_LAMBDA_2,
     )
-    bar_tgt, a_tgt = _vertex_weighted_adjacency(
-        heTable_target, vertTable_target, faceTable_target, width, height
+
+
+@partial(jit, static_argnums=(3, 4))
+def cost_herve_v2v(
+    vertTable: Array,
+    heTable: Array,
+    faceTable: Array,
+    width: float,
+    height: float,
+    vertTable_target: Array,
+    heTable_target: Array,
+    faceTable_target: Array,
+    selected_verts: Array | None = None,
+    _selected_hes: Array | None = None,
+    _selected_faces: Array | None = None,
+    _image_target: Array | None = None,
+) -> Array:
+    r"""Combined geometric + topological cost (scenario 2).
+
+    .. math::
+        C = C_{\mathrm{v2v}} + C_{\mathrm{topo}},
+        \quad \lambda_1 > 0,\; \lambda_2 = 0.
+
+    The topological term only shrinks contacts that are absent from the target;
+    target contact lengths are handled by the v2v term.
+    """
+    return cost_v2v(
+        vertTable,
+        heTable,
+        faceTable,
+        width,
+        height,
+        vertTable_target,
+        heTable_target,
+        faceTable_target,
+        selected_verts,
+        _selected_hes,
+        _selected_faces,
+        _image_target,
+    ) + _cost_herve_topo(
+        vertTable,
+        heTable,
+        faceTable,
+        width,
+        height,
+        heTable_target,
+        vertTable_target,
+        faceTable_target,
+        _HERVE_LAMBDA_1,
+        0.0,
     )
-    bar_tgt = stop_gradient(bar_tgt)
-    a_tgt = stop_gradient(a_tgt)
-
-    n_verts = vertTable.shape[0]
-    idx_i, idx_j = jnp.triu_indices(n_verts, k=1)
-
-    bar_c = bar_curr[idx_i, idx_j]
-    bar_t = bar_tgt[idx_i, idx_j]
-    a_c = a_curr[idx_i, idx_j]
-    a_t = a_tgt[idx_i, idx_j]
-
-    shrink_wrong = _HERVE_LAMBDA_1 * a_c * (1.0 - bar_t)
-    preserve_target = _HERVE_LAMBDA_2 * bar_t * (a_c - a_t) ** 2
-    return jnp.sum(shrink_wrong + preserve_target)
 
 
 def _main() -> None:
@@ -704,7 +826,10 @@ def _main() -> None:
     cost_fns = {
         "cost_v2v": cost_v2v,
         "cost_IAS": cost_IAS,
+        "cost_IAS_v2v": cost_IAS_v2v,
         "cost_herve": cost_herve,
+        "cost_herve_v2v": cost_herve_v2v,
+
     }
 
     outer_lr = 0.05
