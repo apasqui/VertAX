@@ -34,3 +34,17 @@ Inner loop on target mesh -> equilibrium ...
   step  8  cost = 0.200000
   step  9  cost = 0.200000
   step 10  cost = 0.200000
+  plots saved to logs/cost_move_vertices_plots/cost_IAS/
+
+--- Gradient descent on cost_IAS_ott_jax (10 steps) ---
+  step  0  cost = 0.528083
+  step  1  cost = 0.527874
+  step  2  cost = 0.527666
+  step  3  cost = 0.527458
+  step  4  cost = 0.527250
+  step  5  cost = 0.527043
+  step  6  cost = 0.526836
+  step  7  cost = 0.526629
+  step  8  cost = 0.526422
+  step  9  cost = 0.526216
+  step 10  cost = 0.526009
