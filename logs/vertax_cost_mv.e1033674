@@ -1,0 +1,21 @@
+2026-05-22 15:07:05.129125: E external/xla/xla/backends/cpu/codegen/jit_compiler.cc:136] LLVM compilation error: Cannot allocate memory
+2026-05-22 15:07:05.129501: E external/xla/xla/backends/cpu/codegen/jit_compiler.cc:136] LLVM compilation error: Cannot allocate memory
+2026-05-22 15:07:05.130232: E external/xla/xla/backends/cpu/codegen/jit_compiler.cc:136] LLVM compilation error: Cannot allocate memory
+2026-05-22 15:07:05.130910: E external/xla/xla/backends/cpu/codegen/jit_compiler.cc:136] LLVM compilation error: Cannot allocate memory
+2026-05-22 15:07:05.134087: E external/xla/xla/backends/cpu/codegen/jit_compiler.cc:136] LLVM compilation error: Cannot allocate memory
+2026-05-22 15:07:05.146134: E external/xla/xla/backends/cpu/codegen/jit_compiler.cc:136] LLVM compilation error: Cannot allocate memory
+2026-05-22 15:07:05.146722: E external/xla/xla/backends/cpu/codegen/jit_compiler.cc:136] LLVM compilation error: Cannot allocate memory
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/gpfs/users/pasquial/vertax_project/VertAX/src/vertax/cost_move_vertices.py", line 957, in <module>
+  File "/gpfs/users/pasquial/vertax_project/VertAX/src/vertax/cost_move_vertices.py", line 948, in _main
+    if __name__ == "__main__":
+                       ^^^^^^^^
+  File "/gpfs/users/pasquial/vertax_project/VertAX/src/vertax/bilevelopt/bilevelopt.py", line 493, in _build_t1_repair_perm
+    return lax.fori_loop(0, heTable_before.shape[0], body, perm)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+jaxlib.xla_extension.XlaRuntimeError: INTERNAL: Failed to materialize symbols: { (<xla_jit_dylib_8>, { add.711 }) }
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+srun: error: node095: task 0: Exited with exit code 1

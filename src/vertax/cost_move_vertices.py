@@ -262,271 +262,6 @@ def cost_v2v(
     return 0.5 * jnp.mean(sq_min)
 
 
-# Default weights for ``cost_herve`` (see docstring).
-_HERVE_LAMBDA_1 = 1.0  # shrink contacts absent from the target
-_HERVE_LAMBDA_2 = 1.0  # match lengths on target contacts
-
-
-def _vertex_weighted_adjacency(
-    heTable: Array,
-    vertTable: Array,
-    faceTable: Array,
-    width: float,
-    height: float,
-) -> tuple[Array, Array]:
-    """Build symmetric vertex adjacency ``(bar_A, A)`` from undirected mesh edges.
-
-    ``bar_A`` is binary; ``A`` stores edge lengths on adjacent pairs (zero otherwise).
-    Each interior edge is counted once via the ``he < twin`` convention.
-    """
-    n_verts = vertTable.shape[0]
-    n_hes = heTable.shape[0]
-    he_ids = jnp.arange(n_hes, dtype=jnp.int32)
-    twin = heTable[:, 2].astype(jnp.int32)
-    face = heTable[:, 5]
-    face_twin = face[twin]
-
-    src = heTable[:, 3].astype(jnp.int32)
-    tgt = heTable[:, 4].astype(jnp.int32)
-    mask = (he_ids < twin) & (face != face_twin)
-
-    lengths = vmap(
-        lambda he: get_length(he, vertTable, heTable, faceTable, width, height),
-        in_axes=0,
-    )(he_ids)
-    edge_len = jnp.where(mask, lengths, 0.0)
-
-    bar_a = jnp.zeros((n_verts, n_verts))
-    weighted = jnp.zeros((n_verts, n_verts))
-    bar_a = bar_a.at[src, tgt].add(mask.astype(jnp.float32))
-    bar_a = bar_a.at[tgt, src].add(mask.astype(jnp.float32))
-    bar_a = jnp.clip(bar_a, 0.0, 1.0)
-
-    weighted = weighted.at[src, tgt].add(edge_len)
-    weighted = weighted.at[tgt, src].add(edge_len)
-    return bar_a, weighted
-
-
-@partial(jit, static_argnums=(3, 4))
-def cost_herve(
-    vertTable: Array,
-    heTable: Array,
-    faceTable: Array,
-    width: float,
-    height: float,
-    vertTable_target: Array,
-    heTable_target: Array,
-    faceTable_target: Array,
-    _selected_verts: Array | None = None,
-    _selected_hes: Array | None = None,
-    _selected_faces: Array | None = None,
-    _image_target: Array | None = None,
-) -> Array:
-    r"""Topological edge-length cost (Hervé's formulation).
-
-    With binary adjacency :math:`\bar{A}_{\alpha\beta}` and weighted adjacency
-    :math:`A_{\alpha\beta}(\mathbf{X}) = \ell_{\alpha\beta}(\mathbf{X})\,\bar{A}_{\alpha\beta}`:
-
-    .. math::
-        C_{\mathrm{topo}}
-            = \lambda_1 \sum_{\alpha<\beta} A_{\alpha\beta}(\mathbf{X})
-              \bigl(1 - \bar{A}_{\alpha\beta}^{\mathrm{target}}\bigr)
-            + \lambda_2 \sum_{\alpha<\beta} \bar{A}_{\alpha\beta}^{\mathrm{target}}
-              \bigl[A_{\alpha\beta}(\mathbf{X}) - A_{\alpha\beta}^{\mathrm{target}}\bigr]^2.
-
-    Defaults: ``lambda_1 = lambda_2 = 1`` (pure topological minimization).
-    For ``C = C_{\mathrm{geom}} + C_{\mathrm{topo}}`` with ``lambda_2 = 0``, combine
-    with ``cost_v2v`` externally.
-    """
-    bar_curr, a_curr = _vertex_weighted_adjacency(
-        heTable, vertTable, faceTable, width, height
-    )
-    bar_tgt, a_tgt = _vertex_weighted_adjacency(
-        heTable_target, vertTable_target, faceTable_target, width, height
-    )
-
-    n_verts = vertTable.shape[0]
-    idx_i, idx_j = jnp.triu_indices(n_verts, k=1)
-
-    bar_c = bar_curr[idx_i, idx_j]
-    bar_t = bar_tgt[idx_i, idx_j]
-    a_c = a_curr[idx_i, idx_j]
-    a_t = a_tgt[idx_i, idx_j]
-
-    shrink_wrong = _HERVE_LAMBDA_1 * a_c * (1.0 - bar_t)
-    preserve_target = _HERVE_LAMBDA_2 * bar_t * (a_c - a_t) ** 2
-    return jnp.sum(shrink_wrong + preserve_target)
-
-
-@partial(jit, static_argnums=(3, 4))
-def cost_IAS(  # noqa: C901, N802
-    vertTable: Array,
-    heTable: Array,
-    faceTable: Array,
-    _width: float,
-    _height: float,
-    vertTable_target: Array,
-    heTable_target: Array,
-    faceTable_target: Array,
-    _selected_verts: Array | None = None,
-    _selected_hes: Array | None = None,
-    _selected_faces: Array | None = None,
-    _image_target: Array | None = None,
-) -> Array:
-    r"""Differentiable Index Aware Structural Loss. Force to respect the topology.
-
-    C_{IAS}(i,j)   = \sqrt{\sum_{k=1}^{N} (S_1(i,k) - S_2(j,k))^2}
-    """
-    L_box = jnp.sqrt(len(faceTable))
-
-    def l2(x: Array, y: Array) -> Array:
-        diff = x[:, None, :] - y[None, :, :]
-        return jnp.sqrt(jnp.sum(diff**2, axis=-1) + 1e-12)
-
-    def mse(x: Array, y: Array) -> Array:
-        diff = x[:, None, :] - y[None, :, :]
-        return jnp.sum(diff**2, axis=-1) + 1e-12
-
-    def sinkhorn(a: Array, b: Array, C: Array, eps: float = 5e-2, n_iters: int = 50) -> Array:
-        K = jnp.exp(-C / eps)
-        u = jnp.ones_like(a)
-        v = jnp.ones_like(b)
-
-        def body(_: int, state: tuple[Array, Array]) -> tuple[Array, Array]:
-            u, v = state
-            u = a / (K @ v + 1e-12)
-            v = b / (K.T @ u + 1e-12)
-            return (u, v)
-
-        u, v = fori_loop(0, n_iters, body, (u, v))
-        return jnp.outer(u, v) * K
-
-    # dual graph from half-edges
-    def build_dual_adj(heTable: Array, n_faces: int) -> Array:
-        face = heTable[:, 5]
-        twin = heTable[:, 2]
-
-        face_twin = face[twin]
-
-        # mask: 1.0 for valid edges, 0.0 for boundary/self
-        mask = (face != face_twin).astype(jnp.float32)
-
-        A = jnp.zeros((n_faces, n_faces))
-
-        # scatter with mask weighting (no boolean indexing)
-        A = A.at[face, face_twin].add(mask)
-        A = A.at[face_twin, face].add(mask)
-
-        # binarize (avoid double counts)
-        A = jnp.clip(A, 0.0, 1.0)
-
-        return A
-
-    # structure metric (1-hop + 2-hop)
-    def structure_matrix(A: Array) -> Array:
-        # A2 = A @ A
-        # normalize to avoid scaling issues
-        # return 2.0 - A - 0.5 * A2
-        return 2.0 - A
-
-    def get_face_vertices(
-        he_start: Array, heTable: Array, vertTable: Array, max_edges: int = 20
-    ) -> tuple[Array, Array]:
-        """Collect vertices of one face using half-edge traversal.
-
-        Returns fixed-size array (max_edges, 2) + mask
-        """
-        verts = jnp.zeros((max_edges, 2))
-        mask = jnp.zeros((max_edges,))
-        offset = jnp.array([0, 0])
-
-        def body_fun(i: int, state: tuple[Array, Array, Array, Array]) -> tuple[Array, Array, Array, Array]:
-            he, verts, mask, offset = state
-
-            source = heTable[he, 3].astype(jnp.int32)
-            off = heTable[he, 6:8]
-
-            pos = vertTable[source] + offset * L_box  # jnp.array([width, height])
-
-            verts = verts.at[i].set(pos)
-            mask = mask.at[i].set(1.0)
-
-            offset += off
-            he_next = heTable[he, 1].astype(jnp.int32)
-
-            return (he_next, verts, mask, offset)
-
-        _he_final, verts, mask, offset = fori_loop(0, max_edges, body_fun, (he_start, verts, mask, offset))
-
-        return verts, mask
-
-    def polygon_centroid(verts: Array, mask: Array) -> Array:
-        """Compute centroid from masked polygon vertices."""
-        # shift for edges
-        v = verts
-        v_next = jnp.roll(v, -1, axis=0)
-
-        cross = v[:, 0] * v_next[:, 1] - v_next[:, 0] * v[:, 1]
-        cross = cross * mask
-
-        area = jnp.sum(cross) / 2.0 + 1e-12
-
-        cx = jnp.sum((v[:, 0] + v_next[:, 0]) * cross) / (6 * area)
-        cy = jnp.sum((v[:, 1] + v_next[:, 1]) * cross) / (6 * area)
-
-        return jnp.array([cx, cy])
-
-    def compute_face_centroids(faceTable: Array, heTable: Array, vertTable: Array) -> Array:
-        """Compute centroids for all faces."""
-        he_start = faceTable[:].astype(jnp.int32)
-
-        def single_face(he: Array) -> Array:
-            verts, mask = get_face_vertices(he, heTable, vertTable)
-            return polygon_centroid(verts, mask)
-
-        return vmap(single_face)(he_start)
-
-    alpha = 0.0
-    """ATTENTION !!!!!!!!!!!!"""
-
-    # face centroids
-    X = compute_face_centroids(faceTable, heTable, vertTable)
-    Y = compute_face_centroids(faceTable_target, heTable_target, vertTable_target)
-
-    N = X.shape[0]
-    M = Y.shape[0]
-
-    # uniform weights
-    a = jnp.ones(N) / N
-    b = jnp.ones(M) / M
-
-    # geometry cost
-    C_geom = l2(X, Y)
-
-    # structure cost
-    A1 = build_dual_adj(heTable, N)
-    A2 = build_dual_adj(heTable_target, M)
-
-    S1 = structure_matrix(A1)
-    S2 = structure_matrix(A2)
-
-    # project structure into pairwise node cost
-    # (cheap approximation of tem)
-    # C_l2 = l2(S1, S2)
-    C_mse = mse(S1, S2)
-
-    # combined cost
-    C_total = alpha * C_geom + (1.0 - alpha) * C_mse
-
-    # transport
-    gamma = sinkhorn(a, b, C_total)
-
-    # final loss
-    loss = jnp.sum(gamma * C_total)
-
-    return loss
-
-
 # ---------------------------------------------------------------------------
 # Helpers used by `cost_IAS` (kept at module level so they JIT-compile once
 # and so the cost function itself stays short and readable).
@@ -630,7 +365,7 @@ def _face_centroids(faceTable: Array, heTable: Array, vertTable: Array, L_box: A
 
 
 @partial(jit, static_argnums=(3, 4))
-def cost_IAS_ott_jax(  # noqa: N802
+def cost_IAS(  # noqa: N802
     vertTable: Array,
     heTable: Array,
     faceTable: Array,
@@ -689,13 +424,58 @@ def cost_IAS_ott_jax(  # noqa: N802
     return jnp.sum(gamma * C_total)
 
 
+# Default weights for ``cost_herve`` (see docstring).
+_HERVE_LAMBDA_1 = 1.0  # shrink contacts absent from the target
+_HERVE_LAMBDA_2 = 1.0  # match lengths on target contacts
+
+
+def _vertex_weighted_adjacency(
+    heTable: Array,
+    vertTable: Array,
+    faceTable: Array,
+    width: float,
+    height: float,
+) -> tuple[Array, Array]:
+    """Build symmetric vertex adjacency ``(bar_A, A)`` from undirected mesh edges.
+
+    ``bar_A`` is binary; ``A`` stores edge lengths on adjacent pairs (zero otherwise).
+    Each interior edge is counted once via the ``he < twin`` convention.
+    """
+    n_verts = vertTable.shape[0]
+    n_hes = heTable.shape[0]
+    he_ids = jnp.arange(n_hes, dtype=jnp.int32)
+    twin = heTable[:, 2].astype(jnp.int32)
+    face = heTable[:, 5]
+    face_twin = face[twin]
+
+    src = heTable[:, 3].astype(jnp.int32)
+    tgt = heTable[:, 4].astype(jnp.int32)
+    mask = (he_ids < twin) & (face != face_twin)
+
+    lengths = vmap(
+        lambda he: get_length(he, vertTable, heTable, faceTable, width, height),
+        in_axes=0,
+    )(he_ids)
+    edge_len = jnp.where(mask, lengths, 0.0)
+
+    bar_a = jnp.zeros((n_verts, n_verts))
+    weighted = jnp.zeros((n_verts, n_verts))
+    bar_a = bar_a.at[src, tgt].add(mask.astype(jnp.float32))
+    bar_a = bar_a.at[tgt, src].add(mask.astype(jnp.float32))
+    bar_a = jnp.clip(bar_a, 0.0, 1.0)
+
+    weighted = weighted.at[src, tgt].add(edge_len)
+    weighted = weighted.at[tgt, src].add(edge_len)
+    return bar_a, weighted
+
+
 @partial(jit, static_argnums=(3, 4))
-def cost_IAS_ott_jax_move_vertices(  # noqa: N802
+def cost_herve(
     vertTable: Array,
     heTable: Array,
     faceTable: Array,
-    _width: float,
-    _height: float,
+    width: float,
+    height: float,
     vertTable_target: Array,
     heTable_target: Array,
     faceTable_target: Array,
@@ -704,31 +484,40 @@ def cost_IAS_ott_jax_move_vertices(  # noqa: N802
     _selected_faces: Array | None = None,
     _image_target: Array | None = None,
 ) -> Array:
-    r"""IAS loss with topology-driven matching and a geometric vertex gradient.
+    r"""Topological edge-length cost (Hervé's formulation).
 
-    Same OT matching as ``cost_IAS``, but ``gamma`` is stop-gradient'd and only
-    the transport-weighted squared centroid distances contribute to the loss.
+    With binary adjacency :math:`\bar{A}_{\alpha\beta}` and weighted adjacency
+    :math:`A_{\alpha\beta}(\mathbf{X}) = \ell_{\alpha\beta}(\mathbf{X})\,\bar{A}_{\alpha\beta}`:
+
+    .. math::
+        C_{\mathrm{topo}}
+            = \lambda_1 \sum_{\alpha<\beta} A_{\alpha\beta}(\mathbf{X})
+              \bigl(1 - \bar{A}_{\alpha\beta}^{\mathrm{target}}\bigr)
+            + \lambda_2 \sum_{\alpha<\beta} \bar{A}_{\alpha\beta}^{\mathrm{target}}
+              \bigl[A_{\alpha\beta}(\mathbf{X}) - A_{\alpha\beta}^{\mathrm{target}}\bigr]^2.
+
+    Defaults: ``lambda_1 = lambda_2 = 1`` (pure topological minimization).
+    For ``C = C_{\mathrm{geom}} + C_{\mathrm{topo}}`` with ``lambda_2 = 0``, combine
+    with ``cost_v2v`` externally.
     """
-    L_box = jnp.sqrt(len(faceTable))
+    bar_curr, a_curr = _vertex_weighted_adjacency(
+        heTable, vertTable, faceTable, width, height
+    )
+    bar_tgt, a_tgt = _vertex_weighted_adjacency(
+        heTable_target, vertTable_target, faceTable_target, width, height
+    )
 
-    X = _face_centroids(faceTable, heTable, vertTable, L_box)
-    Y = _face_centroids(faceTable_target, heTable_target, vertTable_target, L_box)
-    N, M = X.shape[0], Y.shape[0]
+    n_verts = vertTable.shape[0]
+    idx_i, idx_j = jnp.triu_indices(n_verts, k=1)
 
-    S1 = _structure_matrix(_build_dual_adj(heTable, N))
-    S2 = _structure_matrix(_build_dual_adj(heTable_target, M))
-    C_struct = _pairwise_sq(S1, S2)
+    bar_c = bar_curr[idx_i, idx_j]
+    bar_t = bar_tgt[idx_i, idx_j]
+    a_c = a_curr[idx_i, idx_j]
+    a_t = a_tgt[idx_i, idx_j]
 
-    a = jnp.ones(N) / N
-    b = jnp.ones(M) / M
-
-    geom = Geometry(cost_matrix=C_struct, epsilon=_IAS_EPSILON)
-    gamma = _IAS_SINKHORN(LinearProblem(geom, a=a, b=b)).matrix
-    gamma = stop_gradient(gamma)
-
-    C_geom_sq = _pairwise_sq(X, Y)
-
-    return jnp.sum(gamma * C_geom_sq)
+    shrink_wrong = _HERVE_LAMBDA_1 * a_c * (1.0 - bar_t)
+    preserve_target = _HERVE_LAMBDA_2 * bar_t * (a_c - a_t) ** 2
+    return jnp.sum(shrink_wrong + preserve_target)
 
 
 def _main() -> None:
@@ -785,6 +574,35 @@ def _main() -> None:
                 title=f"{cost_name}: {label}",
             )
         print(f"  plots saved to {plot_dir}/")
+
+    def _vertex_relative_error(vt_final: Array, vt_gt: Array) -> Array:
+        """Per-vertex ``|x' - x_gt| / x_gt`` using minimum-image displacement (PBC)."""
+        shifts = jnp.array(
+            [[dx * width, dy * height] for dx in (-1, 0, 1) for dy in (-1, 0, 1)],
+            dtype=vt_final.dtype,
+        )
+        deltas = vt_final[:, None, :] - (vt_gt[:, None, :] + shifts[None, :, :])
+        best = jnp.argmin(jnp.sum(deltas * deltas, axis=-1), axis=1)
+        disp = deltas[jnp.arange(vt_final.shape[0]), best, :]
+        rel = jnp.abs(disp) / (jnp.abs(vt_gt) + 1e-12)
+        return jnp.max(rel, axis=-1)
+
+    def _save_relative_error_plot(final_vertices_by_cost: dict[str, Array]) -> None:
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(layout="constrained")
+        vertex_ids = np.arange(n_verts)
+        for cost_name, vt_final in final_vertices_by_cost.items():
+            rel_err = np.asarray(_vertex_relative_error(vt_final, vt_tgt))
+            ax.plot(vertex_ids, rel_err, label=cost_name, marker="o", markersize=3)
+        ax.set_xlabel("vertex index")
+        ax.set_ylabel(r"$|x' - x_{\mathrm{gt}}| / x_{\mathrm{gt}}$")
+        ax.set_title("Relative position error: final vs target")
+        ax.legend()
+        out_path = plot_root / "relative_error_final_vs_target.png"
+        fig.savefig(out_path)
+        plt.close(fig)
+        print(f"Relative error plot saved to {out_path}")
 
     # ------------------------------------------------------------------
     # 1. Initial out-of-equilibrium mesh from random seeds
@@ -883,8 +701,6 @@ def _main() -> None:
     cost_fns = {
         "cost_v2v": cost_v2v,
         "cost_IAS": cost_IAS,
-        "cost_IAS_ott_jax": cost_IAS_ott_jax,
-        "cost_IAS_ott_jax_move_vertices": cost_IAS_ott_jax_move_vertices,
         "cost_herve": cost_herve,
     }
 
@@ -894,6 +710,7 @@ def _main() -> None:
     selected_verts = jnp.arange(n_verts)
     selected_hes = jnp.arange(n_hes)
     selected_faces = jnp.arange(n_faces)
+    final_vertices_by_cost: dict[str, Array] = {}
 
     for name, cost_fn in cost_fns.items():
         print(f"\n--- Gradient descent on {name} ({n_outer_steps} steps) ---")
@@ -951,7 +768,10 @@ def _main() -> None:
             if step % 100 == 0:
                 print(f"  step {step:2d}  cost = {c:.6f}")
 
+        final_vertices_by_cost[name] = vt
         _save_configuration_plots(name, vt, ht, ft)
+
+    _save_relative_error_plot(final_vertices_by_cost)
 
 
 if __name__ == "__main__":

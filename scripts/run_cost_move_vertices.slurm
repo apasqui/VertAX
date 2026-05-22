@@ -2,7 +2,7 @@
 #SBATCH --job-name=vertax_cost_mv
 #SBATCH --output=logs/%x.o%j
 #SBATCH --error=logs/%x.e%j
-#SBATCH --time=00:20:00
+#SBATCH --time=01:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
