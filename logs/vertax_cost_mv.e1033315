@@ -1,0 +1,33 @@
+ERROR:2026-05-22 14:09:00,467:jax._src.callback:96: jax.pure_callback failed
+Traceback (most recent call last):
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/jax/_src/callback.py", line 94, in pure_callback_impl
+    return tree_util.tree_map(np.asarray, callback(*args))
+                                          ^^^^^^^^^^^^^^^
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/jax/_src/callback.py", line 71, in __call__
+    return tree_util.tree_leaves(self.callback_func(*args, **kwargs))
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/equinox/_errors.py", line 89, in raises
+    raise _EquinoxRuntimeError(
+equinox._errors._EquinoxRuntimeError: The linear solver returned non-finite (NaN or inf) output. This usually means that the
+operator was not well-posed, and that the solver does not support this.
+
+If you are trying solve a linear least-squares problem then you should pass
+`solver=AutoLinearSolver(well_posed=False)`. By default `lineax.linear_solve`
+assumes that the operator is square and nonsingular.
+
+If you *were* expecting this solver to work with this operator, then it may be because:
+
+(a) the operator is singular, and your code has a bug; or
+
+(b) the operator was nearly singular (i.e. it had a high condition number:
+    `jnp.linalg.cond(operator.as_matrix())` is large), and the solver suffered from
+    numerical instability issues; or
+
+(c) the operator is declared to exhibit a certain property (e.g. positive definiteness)
+    that is does not actually satisfy.
+
+
+--------------------
+An error occurred during the runtime of your JAX program! Unfortunately you do not appear to be using `equinox.filter_jit` (perhaps you are using `jax.jit` instead?) and so further information about the error cannot be displayed. (Probably you are seeing a very large but uninformative error message right now.) Please wrap your program with `equinox.filter_jit`.
+--------------------
+

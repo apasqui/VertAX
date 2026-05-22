@@ -2,6 +2,7 @@ jax
 jaxlib
 jaxopt
 optax
+ott-jax
 numpy
 scipy
 scikit-image

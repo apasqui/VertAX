@@ -107,7 +107,7 @@ source .venv/bin/activate
 
 ```sh
 git clone https://github.com/VirtualEmbryo/VertAX.git
-cd vertax
+cd VertAX
 pip install -e .
 ```
 

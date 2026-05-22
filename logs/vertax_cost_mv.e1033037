@@ -1,0 +1,24 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/gpfs/users/pasquial/vertax_project/VertAX/src/vertax/cost_move_vertices.py", line 54, in <module>
+    from ott.geometry.geometry import Geometry
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/ott/__init__.py", line 16, in <module>
+    from . import (
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/ott/experimental/__init__.py", line 14, in <module>
+    from . import mmsinkhorn
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/ott/experimental/mmsinkhorn.py", line 21, in <module>
+    from ott.geometry import costs, epsilon_scheduler, pointcloud
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/ott/geometry/__init__.py", line 14, in <module>
+    from . import (
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/ott/geometry/distrib_costs.py", line 21, in <module>
+    from ott.solvers.linear import univariate
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/ott/solvers/__init__.py", line 14, in <module>
+    from . import linear, quadratic, utils, was_solver
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/ott/solvers/linear/__init__.py", line 14, in <module>
+    from . import (
+  File "/gpfs/users/pasquial/.conda/envs/vertax/lib/python3.12/site-packages/ott/solvers/linear/semidiscrete.py", line 47, in <module>
+    @jtu.register_dataclass
+     ^^^^^^^^^^^^^^^^^^^^^^
+TypeError: register_dataclass() missing 2 required positional arguments: 'data_fields' and 'meta_fields'
+srun: error: node137: task 0: Exited with exit code 1

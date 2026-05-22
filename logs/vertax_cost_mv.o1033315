@@ -1,0 +1,49 @@
+[2026-05-22T14:08:03+02:00] Running cost_move_vertices on node083
+  workdir=/gpfs/users/pasquial/vertax_project/VertAX
+  python=/gpfs/users/pasquial/.conda/envs/vertax/bin/python
+  cpus=8
+Initial mesh: 20 faces, 60 edges, 40 vertices, box = 4.472 x 4.472
+Inner loop on initial mesh -> equilibrium ...
+  energy: 21.1932 -> 0.0306
+Inner loop on target mesh -> equilibrium ...
+  energy: 22.5401 -> 0.0213
+
+--- Gradient descent on cost_v2v (10 steps) ---
+  step  0  cost = 0.006484
+  step  1  cost = 0.006468
+  step  2  cost = 0.006452
+  step  3  cost = 0.006436
+  step  4  cost = 0.006420
+  step  5  cost = 0.006404
+  step  6  cost = 0.006388
+  step  7  cost = 0.006372
+  step  8  cost = 0.006356
+  step  9  cost = 0.006340
+  step 10  cost = 0.006324
+
+--- Gradient descent on cost_IAS (10 steps) ---
+  step  0  cost = 0.550000
+  step  1  cost = nan
+  step  2  cost = nan
+  step  3  cost = nan
+  step  4  cost = nan
+  step  5  cost = nan
+  step  6  cost = nan
+  step  7  cost = nan
+  step  8  cost = nan
+  step  9  cost = nan
+  step 10  cost = nan
+
+--- Gradient descent on cost_IAS_move_vertices (10 steps) ---
+  step  0  cost = 2.023613
+  step  1  cost = 2.018345
+  step  2  cost = 2.013098
+  step  3  cost = 2.007872
+  step  4  cost = 2.002668
+  step  5  cost = 1.997484
+  step  6  cost = 1.992322
+  step  7  cost = 1.987181
+  step  8  cost = 1.982061
+  step  9  cost = 1.976961
+  step 10  cost = 1.971882
+[2026-05-22T14:09:05+02:00] Done.
