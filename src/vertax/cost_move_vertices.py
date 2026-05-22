@@ -889,7 +889,7 @@ def _main() -> None:
     }
 
     outer_lr = 0.05
-    n_outer_steps = 10
+    n_outer_steps = 1000
     min_dist_T1 = 0.005
     selected_verts = jnp.arange(n_verts)
     selected_hes = jnp.arange(n_hes)
@@ -948,7 +948,8 @@ def _main() -> None:
             perm = _build_t1_repair_perm(vt, vt_tgt, ht_before, ht, width, height)
             vt, ht = _apply_perm_to_state(perm, vt, ht)
             c = float(cost_fn(vt, ht, ft, width, height, vt_tgt, ht_tgt, ft_tgt))
-            print(f"  step {step:2d}  cost = {c:.6f}")
+            if step % 100 == 0:
+                print(f"  step {step:2d}  cost = {c:.6f}")
 
         _save_configuration_plots(name, vt, ht, ft)
 

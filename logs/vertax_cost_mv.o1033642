@@ -48,3 +48,33 @@ Inner loop on target mesh -> equilibrium ...
   step  8  cost = 0.526422
   step  9  cost = 0.526216
   step 10  cost = 0.526009
+  plots saved to logs/cost_move_vertices_plots/cost_IAS_ott_jax/
+
+--- Gradient descent on cost_IAS_ott_jax_move_vertices (10 steps) ---
+  step  0  cost = 2.023613
+  step  1  cost = 2.018345
+  step  2  cost = 2.013098
+  step  3  cost = 2.007872
+  step  4  cost = 2.002668
+  step  5  cost = 1.997484
+  step  6  cost = 1.992322
+  step  7  cost = 1.987181
+  step  8  cost = 1.982061
+  step  9  cost = 1.976961
+  step 10  cost = 1.971882
+  plots saved to logs/cost_move_vertices_plots/cost_IAS_ott_jax_move_vertices/
+
+--- Gradient descent on cost_herve (10 steps) ---
+  step  0  cost = 2.018694
+  step  1  cost = 1.534654
+  step  2  cost = 1.237653
+  step  3  cost = 1.070328
+  step  4  cost = 1.043288
+  step  5  cost = 0.907687
+  step  6  cost = 0.856600
+  step  7  cost = 0.847593
+  step  8  cost = 0.750588
+  step  9  cost = 0.720068
+  step 10  cost = 0.844985
+  plots saved to logs/cost_move_vertices_plots/cost_herve/
+[2026-05-22T14:51:01+02:00] Done.
