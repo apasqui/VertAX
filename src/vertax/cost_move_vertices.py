@@ -506,6 +506,8 @@ def cost_herve(
     bar_tgt, a_tgt = _vertex_weighted_adjacency(
         heTable_target, vertTable_target, faceTable_target, width, height
     )
+    bar_tgt = stop_gradient(bar_tgt)
+    a_tgt = stop_gradient(a_tgt)
 
     n_verts = vertTable.shape[0]
     idx_i, idx_j = jnp.triu_indices(n_verts, k=1)
@@ -535,6 +537,7 @@ def _main() -> None:
            mesh, applying ``update_T1`` after each step (T1 accepted when the
            outer cost decreases).
     """
+    import gc
     import jax
     import optax
 
@@ -712,6 +715,14 @@ def _main() -> None:
     selected_faces = jnp.arange(n_faces)
     final_vertices_by_cost: dict[str, Array] = {}
 
+    jit_repair_perm = jax.jit(_build_t1_repair_perm, static_argnums=(4, 5))
+    jit_apply_perm = jax.jit(_apply_perm_to_state)
+    # Warm up T1-repair kernels once while memory is still free.
+    _warm_perm = jit_repair_perm(vt_init_eq, vt_tgt, ht_init_eq, ht_init_eq, width, height)
+    _warm_vt, _warm_ht = jit_apply_perm(_warm_perm, vt_init_eq, ht_init_eq)
+    jax.block_until_ready(_warm_vt)
+    del _warm_perm, _warm_vt, _warm_ht
+
     for name, cost_fn in cost_fns.items():
         print(f"\n--- Gradient descent on {name} ({n_outer_steps} steps) ---")
 
@@ -745,6 +756,7 @@ def _main() -> None:
 
         for step in range(1, n_outer_steps + 1):
             g_vt = grad_cost_fn(vt, ht, ft, width, height, vt_tgt, ht_tgt, ft_tgt)
+            jax.block_until_ready(g_vt)
             vt = vt - outer_lr * g_vt
             ht_before = ht
             vt, ht, ft = update_T1(
@@ -762,14 +774,17 @@ def _main() -> None:
                 selected_hes,
                 selected_faces,
             )
-            perm = _build_t1_repair_perm(vt, vt_tgt, ht_before, ht, width, height)
-            vt, ht = _apply_perm_to_state(perm, vt, ht)
+            if bool(np.any(np.asarray(ht_before[:, 5]) != np.asarray(ht[:, 5]))):
+                perm = jit_repair_perm(vt, vt_tgt, ht_before, ht, width, height)
+                vt, ht = jit_apply_perm(perm, vt, ht)
             c = float(cost_fn(vt, ht, ft, width, height, vt_tgt, ht_tgt, ft_tgt))
             if step % 100 == 0:
                 print(f"  step {step:2d}  cost = {c:.6f}")
 
         final_vertices_by_cost[name] = vt
         _save_configuration_plots(name, vt, ht, ft)
+        jax.clear_caches()
+        gc.collect()
 
     _save_relative_error_plot(final_vertices_by_cost)
 
