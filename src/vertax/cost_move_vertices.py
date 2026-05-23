@@ -682,23 +682,40 @@ def _main() -> None:
         mesh.faces = ft
         return mesh
 
-    def _save_configuration_plots(cost_name: str, vt_final: Array, ht_final: Array, ft_final: Array) -> None:
+    def _save_configuration_plots(
+        cost_name: str,
+        vt: Array,
+        ht: Array,
+        ft: Array,
+        *,
+        step: int | None = None,
+        save_reference: bool = False,
+    ) -> None:
         plot_dir = plot_root / cost_name
         plot_dir.mkdir(parents=True, exist_ok=True)
-        configs = (
-            ("initial", vt_init_eq, ht_init_eq, ft_init_eq),
-            ("target", vt_tgt, ht_tgt, ft_tgt),
-            ("final", vt_final, ht_final, ft_final),
+
+        if save_reference:
+            for label, v, h, f in (
+                ("initial", vt_init_eq, ht_init_eq, ft_init_eq),
+                ("target", vt_tgt, ht_tgt, ft_tgt),
+            ):
+                plot_mesh(
+                    _mesh_from_state(v, h, f),
+                    show=False,
+                    save=True,
+                    save_path=str(plot_dir / f"{label}.png"),
+                    title=f"{cost_name}: {label}",
+                )
+
+        label = "final" if step is None else f"step_{step:05d}"
+        plot_mesh(
+            _mesh_from_state(vt, ht, ft),
+            show=False,
+            save=True,
+            save_path=str(plot_dir / f"{label}.png"),
+            title=f"{cost_name}: {label}",
         )
-        for label, vt, ht, ft in configs:
-            plot_mesh(
-                _mesh_from_state(vt, ht, ft),
-                show=False,
-                save=True,
-                save_path=str(plot_dir / f"{label}.png"),
-                title=f"{cost_name}: {label}",
-            )
-        print(f"  plots saved to {plot_dir}/")
+        print(f"  plot saved to {plot_dir / label}.png")
 
     def _vertex_relative_error(vt_final: Array, vt_gt: Array) -> Array:
         """Per-vertex ``|x' - x_gt| / x_gt`` using minimum-image displacement (PBC)."""
@@ -869,6 +886,7 @@ def _main() -> None:
 
         c0 = float(cost_fn(vt, ht, ft, width, height, vt_tgt, ht_tgt, ft_tgt))
         print(f"  step  0  cost = {c0:.6f}")
+        _save_configuration_plots(name, vt, ht, ft, save_reference=True)
 
         for step in range(1, n_outer_steps + 1):
             g_vt = grad_cost_fn(vt, ht, ft, width, height, vt_tgt, ht_tgt, ft_tgt)
@@ -896,6 +914,7 @@ def _main() -> None:
             c = float(cost_fn(vt, ht, ft, width, height, vt_tgt, ht_tgt, ft_tgt))
             if step % 100 == 0:
                 print(f"  step {step:2d}  cost = {c:.6f}")
+                _save_configuration_plots(name, vt, ht, ft, step=step)
 
         final_vertices_by_cost[name] = vt
         _save_configuration_plots(name, vt, ht, ft)
