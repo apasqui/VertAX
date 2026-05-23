@@ -470,8 +470,8 @@ def cost_IAS_v2v(  # noqa: N802
 
 
 # Default weights for ``cost_herve`` (see docstring).
-_HERVE_LAMBDA_1 = 1.0  # shrink contacts absent from the target
-_HERVE_LAMBDA_2 = 1.0  # match lengths on target contacts
+_HERVE_LAMBDA_1 = 0.1  # shrink contacts absent from the target
+_HERVE_LAMBDA_2 = 0.1  # match lengths on target contacts
 
 
 def _vertex_weighted_adjacency(
@@ -617,7 +617,7 @@ def cost_herve_v2v(
     The topological term only shrinks contacts that are absent from the target;
     target contact lengths are handled by the v2v term.
     """
-    return cost_v2v(
+    return 100. * cost_v2v(
         vertTable,
         heTable,
         faceTable,
@@ -640,7 +640,7 @@ def cost_herve_v2v(
         vertTable_target,
         faceTable_target,
         _HERVE_LAMBDA_1,
-        0.0,
+        _HERVE_LAMBDA_2,
     )
 
 
@@ -832,9 +832,9 @@ def _main() -> None:
 
     }
 
-    outer_lr = 0.05
-    n_outer_steps = 1000
-    min_dist_T1 = 0.005
+    outer_lr = 0.01
+    n_outer_steps = 10000
+    min_dist_T1 = 0.008
     selected_verts = jnp.arange(n_verts)
     selected_hes = jnp.arange(n_hes)
     selected_faces = jnp.arange(n_faces)
@@ -853,7 +853,7 @@ def _main() -> None:
 
         grad_cost_fn = jax.jit(jax.grad(cost_fn, argnums=0), static_argnums=(3, 4))
 
-        def cost_for_t1(
+        def energy_for_t1(
             vertTable: Array,
             heTable: Array,
             faceTable: Array,
@@ -861,16 +861,7 @@ def _main() -> None:
             _he_params: Array,
             _face_params: Array,
         ) -> Array:
-            return cost_fn(
-                vertTable,
-                heTable,
-                faceTable,
-                width,
-                height,
-                vt_tgt,
-                ht_tgt,
-                ft_tgt,
-            )
+            return 1.
 
         vt = vt_init_eq
         ht = ht_init_eq
@@ -893,7 +884,7 @@ def _main() -> None:
                 vert_params,
                 he_params,
                 sf_init,
-                cost_for_t1,
+                energy_for_t1,
                 min_dist_T1,
                 selected_verts,
                 selected_hes,
